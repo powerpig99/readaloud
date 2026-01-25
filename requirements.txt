@@ -1,0 +1,11 @@
+gradio>=4.0
+qwen-tts
+torch
+torchaudio
+librosa
+soundfile
+pydub
+numpy
+markdown
+whisperx
+faster-whisper

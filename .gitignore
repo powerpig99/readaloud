@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+venv/
+.venv/
+env/
+.env
+
+# macOS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Project data (user-generated)
+data/
+library/
+cache/
+files/
+
+# Claude Code
+.claude/
+
+# Temporary files
+*.tmp
+*.temp
+*.log
