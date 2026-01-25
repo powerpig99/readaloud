@@ -1,5 +1,10 @@
 # ReadAloud
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![NiceGUI](https://img.shields.io/badge/UI-NiceGUI-green.svg)](https://nicegui.io/)
+[![Local First](https://img.shields.io/badge/Local-First-purple.svg)](#)
+
 **Local-first text-to-speech reader powered by Qwen3-TTS.**
 
 Upload markdown or text files, choose from 9 natural voices, and listen at your preferred speed. Everything runs locally—no cloud, no accounts.
