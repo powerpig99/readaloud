@@ -10,7 +10,7 @@ Upload markdown or text files, choose from 9 natural voices, and listen at your 
 
 ## Why This Exists
 
-I built this in 7 hours to demonstrate a thesis: **AI-augmented development delivers orders of magnitude efficiency improvements over traditional hand-coding.**
+I built the initial MVP in 7 hours, then spent another 5-7 hours migrating to NiceGUI and adding advanced features. Total: ~12-14 hours to demonstrate a thesis: **AI-augmented development delivers orders of magnitude efficiency improvements over traditional hand-coding.**
 
 But the motivation goes deeper.
 
@@ -194,7 +194,11 @@ readaloud/
 
 ## Built With
 
-This project was built using AI-augmented development with Claude. The initial MVP was produced in a 7-hour session, with subsequent enhancements adding NiceGUI migration and advanced features.
+This project was built using AI-augmented development with Claude:
+- **V2 (Gradio MVP)**: 7 hours — core TTS, library management, basic UI
+- **V3 (NiceGUI)**: +5-7 hours — modern UI, CJK support, duplicate detection, screen recording
+
+Total development time: ~12-14 hours for a full-featured local TTS application.
 
 ---
 
