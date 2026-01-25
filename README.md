@@ -4,6 +4,8 @@
 
 Upload markdown or text files, choose from 9 natural voices, and listen at your preferred speed. Everything runs locally—no cloud, no accounts.
 
+![ReadAloud Screenshot](screenshot.png)
+
 ---
 
 ## Why This Exists
