@@ -1,14 +1,14 @@
 # ReadAloud
 
-**Local-first text-to-speech reader with voice cloning, powered by Qwen3-TTS.**
+**Local-first text-to-speech reader powered by Qwen3-TTS.**
 
-Convert your documents to natural-sounding speech. Upload a markdown file, optionally clone any voice from a short sample, and listen at your preferred speed (0.5x - 3x).
+Upload markdown or text files, choose from 9 natural voices, and listen at your preferred speed. Everything runs locally—no cloud, no accounts.
 
 ---
 
 ## Why This Exists
 
-I built this in 3 days to demonstrate a thesis: **AI-augmented development delivers orders of magnitude efficiency improvements over traditional hand-coding.**
+I built this in 7 hours to demonstrate a thesis: **AI-augmented development delivers orders of magnitude efficiency improvements over traditional hand-coding.**
 
 But the motivation goes deeper.
 
@@ -22,7 +22,7 @@ Then I watched [Cliff Weitzman's interview](https://youtu.be/yfALZJcurZw)—the 
 
 ### The Technical Moment
 
-In January 2026, Qwen released [Qwen3-TTS](https://github.com/QwenLM/Qwen3-TTS)—open-source, voice cloning, 10 languages, runs locally. The core technology that powers premium TTS services became freely available overnight.
+In January 2025, Qwen released [Qwen3-TTS](https://github.com/QwenLM/Qwen3-TTS)—open-source, runs locally, supports 10 languages. The core technology that powers premium TTS services became freely available.
 
 This project is what happens when personal resonance meets technical timing.
 
@@ -30,10 +30,11 @@ This project is what happens when personal resonance meets technical timing.
 
 ## Features
 
-- **Markdown Support** — Upload .md files, automatically extract readable text
-- **Voice Cloning** — Clone any voice from a 5-30 second sample
+- **Document Library** — Persistent storage for your documents and generated audio
+- **9 Natural Voices** — Ryan, Aiden, Serena, Vivian, Uncle Fu, Dylan, Eric, Ono Anna, Sohee
 - **10 Languages** — English, Chinese, Japanese, Korean, French, German, Spanish, Portuguese, Russian, Italian
-- **Speed Control** — 0.5x to 3x playback speed
+- **Speed Control** — 0.5x to 2x playback speed
+- **Model Choice** — 0.6B (fast) or 1.7B (higher quality)
 - **Fully Local** — No cloud, no accounts, your data stays on your machine
 - **Download** — Export generated audio as WAV
 
@@ -45,6 +46,7 @@ This project is what happens when personal resonance meets technical timing.
 
 - Python 3.10+
 - ~8GB RAM (for 0.6B model) or ~16GB (for 1.7B model)
+- macOS, Linux, or Windows
 
 ### Installation
 
@@ -68,33 +70,20 @@ python app.py
 
 Open http://127.0.0.1:7860 in your browser.
 
-**First run:** The TTS model (~1.5GB) downloads automatically from HuggingFace. This takes a few minutes depending on your connection.
+**First run:** The TTS model (~1.5GB) downloads automatically from HuggingFace.
 
 ---
 
 ## Usage
 
-### Basic (Default Voice)
+1. Click **Add New Document** accordion
+2. Upload a `.md` or `.txt` file
+3. Select voice, language, and model size
+4. Click **Add & Generate Audio**
+5. Wait for generation (shown in toast notifications)
+6. Use the audio player to listen—adjust speed with the built-in speed button
 
-1. Click "Upload .md File" and select your document
-2. Review the text preview
-3. Select language
-4. Click "Generate Audio"
-5. Listen and adjust speed as needed
-
-### Voice Cloning
-
-1. Upload your document
-2. Select "Clone from Reference"
-3. Upload a clear audio sample (5-30 seconds)
-4. Type the **exact** transcript of what's spoken in the sample
-5. Generate audio—it will speak in the cloned voice
-
-**Tips for good voice cloning:**
-- Use clear audio with minimal background noise
-- 10-20 seconds works best
-- Transcript must match exactly
-- Same language as your document works best
+Your documents and audio persist in the library. Select from the dropdown to switch between them.
 
 ---
 
@@ -104,52 +93,57 @@ Open http://127.0.0.1:7860 in your browser.
 
 | Component | Technology |
 |-----------|------------|
-| TTS Model | Qwen3-TTS-12Hz-0.6B-Base |
+| TTS Model | Qwen3-TTS (0.6B or 1.7B) |
 | UI | Gradio 4.x |
-| Audio Processing | pydub, librosa, soundfile |
-| Text Processing | regex, markdown |
+| Audio | soundfile, numpy |
+| Text Processing | regex |
+
+### Architecture
+
+```
+readaloud/
+├── app.py              # Gradio UI, library management
+├── tts_engine.py       # Qwen3-TTS model wrapper
+├── library.py          # Document/audio persistence
+├── text_processor.py   # Markdown parsing, text chunking
+├── audio_processor.py  # Audio duration utilities
+├── alignment.py        # Timing estimation
+└── sync.py             # Sync calculations
+```
 
 ### How It Works
 
-1. **Text Extraction** — Strip markdown formatting, keep readable content
-2. **Chunking** — Split at sentence boundaries (max ~800 chars per chunk)
-3. **Voice Prompt** — If cloning, create voice embedding from reference
-4. **Generation** — Process each chunk through Qwen3-TTS
-5. **Concatenation** — Join audio chunks seamlessly
-6. **Post-processing** — Apply speed adjustment via sample rate manipulation
-
-### Model Options
-
-| Model | Size | RAM | Quality | Speed |
-|-------|------|-----|---------|-------|
-| 0.6B | ~1.5GB | ~8GB | Good | Fast |
-| 1.7B | ~4GB | ~16GB | Better | Slower |
+1. **Upload** — Store document in library
+2. **Extract** — Strip markdown formatting, keep readable text
+3. **Chunk** — Split at sentence boundaries (~800 chars per chunk)
+4. **Generate** — Process each chunk through Qwen3-TTS
+5. **Concatenate** — Join audio chunks into single file
+6. **Play** — Stream through Gradio audio player
 
 ---
 
 ## Limitations
 
-- **Markdown only** — PDF/DOCX support planned
+- **Markdown/Text only** — No PDF or DOCX support yet
 - **No streaming** — Full audio generates before playback
-- **Speed via resampling** — Extreme speeds (0.5x, 3x) may sound unnatural
-- **No text highlighting sync** — Audio-only, no visual tracking
+- **Speed limited to 2x** — Gradio's native player limitation
 
 ---
 
 ## Roadmap
 
+- [ ] Voice cloning from reference audio
+- [ ] Extended speed control (up to 3x)
+- [ ] Synchronized text highlighting (karaoke mode)
 - [ ] PDF support
 - [ ] Real-time streaming playback
-- [ ] Synchronized text highlighting
-- [ ] Audio caching (don't regenerate same content)
-- [ ] Multiple saved voices
 - [ ] Mobile-friendly UI
 
 ---
 
 ## Built With
 
-This project was built using AI-augmented development with Claude. The entire codebase was produced in a single session through iterative prompting and refinement.
+This project was built in a single 7-hour session using AI-augmented development with Claude. The entire codebase—from architecture to working MVP—was produced through iterative prompting and refinement.
 
 ---
 
@@ -171,6 +165,6 @@ MIT
 
 **Jing Liang**
 Helsinki, Finland
-[GitHub](https://github.com/powerpig99) | [Email](mailto:jingliang@gmail.com)
+[GitHub](https://github.com/powerpig99)
 
 *Building at the intersection of AI, learning, and human potential.*
