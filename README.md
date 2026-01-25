@@ -200,6 +200,8 @@ This project was built using AI-augmented development with Claude:
 
 Total development time: ~12-14 hours for a full-featured local TTS application.
 
+**Tested on**: MacBook Pro M4 with 48GB RAM. Performance will vary on other hardware.
+
 ---
 
 ## License
