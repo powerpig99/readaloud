@@ -32,13 +32,21 @@ This project is what happens when personal resonance meets technical timing.
 
 ## Features
 
-- **Document Library** — Persistent storage for your documents and generated audio
+### Core
+- **Document Library** — Persistent storage with card-based UI and selection highlighting
 - **9 Natural Voices** — Ryan, Aiden, Serena, Vivian, Uncle Fu, Dylan, Eric, Ono Anna, Sohee
 - **10 Languages** — English, Chinese, Japanese, Korean, French, German, Spanish, Portuguese, Russian, Italian
-- **Speed Control** — 0.5x to 2x playback speed
+- **Speed Control** — 0.5x to 3x playback speed (NiceGUI version)
 - **Model Choice** — 0.6B (fast) or 1.7B (higher quality)
 - **Fully Local** — No cloud, no accounts, your data stays on your machine
-- **Download** — Export generated audio as WAV
+
+### NiceGUI Version Enhancements (Recommended)
+- **Title Auto-Prefill** — Extracts title from markdown `#` headers on upload
+- **Duplicate Detection** — SHA-256 content hashing with replace/cancel dialog
+- **CJK Text Chunking** — Properly splits Chinese/Japanese/Korean on sentence boundaries (。！？，；：)
+- **Progress Indicator** — Shows "Generating chunk X/Y..." during audio generation
+- **Extended Speed Control** — 0.5x to 3x via custom HTML5 audio player
+- **Screen Recording** — Press 'D' key to record current tab for sharing feedback
 
 ---
 
@@ -66,10 +74,16 @@ pip install -r requirements.txt
 
 ### Run
 
+**NiceGUI Version (Recommended):**
+```bash
+python app_nicegui.py
+```
+Open http://127.0.0.1:8080 in your browser.
+
+**Gradio Version (Legacy):**
 ```bash
 python app.py
 ```
-
 Open http://127.0.0.1:7860 in your browser.
 
 **First run:** The TTS model (~1.5GB) downloads automatically from HuggingFace.
@@ -79,13 +93,17 @@ Open http://127.0.0.1:7860 in your browser.
 ## Usage
 
 1. Click **Add New Document** accordion
-2. Upload a `.md` or `.txt` file
+2. Upload a `.md` or `.txt` file (title auto-fills from content)
 3. Select voice, language, and model size
 4. Click **Add & Generate Audio**
-5. Wait for generation (shown in toast notifications)
-6. Use the audio player to listen—adjust speed with the built-in speed button
+5. Watch progress indicator during generation
+6. Use the audio player to listen—select speed with the button row (0.5x-3x)
 
-Your documents and audio persist in the library. Select from the dropdown to switch between them.
+Your documents and audio persist in the library. Click any card to switch between them.
+
+### Hidden Features
+
+- **Screen Recording**: Press `D` key (not while typing) to record the current tab with audio. Press `D` again or click Chrome's "Stop sharing" to save. Output is WebM (convert to MP4 for X/Twitter with `ffmpeg -i input.webm -c:v libx264 -c:a aac output.mp4`)
 
 ---
 
@@ -96,31 +114,56 @@ Your documents and audio persist in the library. Select from the dropdown to swi
 | Component | Technology |
 |-----------|------------|
 | TTS Model | Qwen3-TTS (0.6B or 1.7B) |
-| UI | Gradio 4.x |
+| UI (Recommended) | NiceGUI + Tailwind CSS |
+| UI (Legacy) | Gradio 4.x |
 | Audio | soundfile, numpy |
-| Text Processing | regex |
+| Text Processing | regex with CJK support |
 
 ### Architecture
 
 ```
 readaloud/
-├── app.py              # Gradio UI, library management
+├── app_nicegui.py      # NiceGUI UI (recommended) - port 8080
+├── app.py              # Gradio UI (legacy) - port 7860
 ├── tts_engine.py       # Qwen3-TTS model wrapper
-├── library.py          # Document/audio persistence
-├── text_processor.py   # Markdown parsing, text chunking
+├── library.py          # Document/audio persistence with content hashing
+├── text_processor.py   # Markdown parsing, CJK-aware text chunking
 ├── audio_processor.py  # Audio duration utilities
 ├── alignment.py        # Timing estimation
-└── sync.py             # Sync calculations
+├── sync.py             # Sync calculations
+├── data/
+│   └── library.json    # Library index with content hashes
+└── library/            # Persistent storage (gitignored)
+    └── {doc_id}/
+        ├── document.md
+        ├── audio.wav
+        ├── timing.json
+        └── metadata.json
 ```
 
 ### How It Works
 
-1. **Upload** — Store document in library
-2. **Extract** — Strip markdown formatting, keep readable text
-3. **Chunk** — Split at sentence boundaries (~800 chars per chunk)
-4. **Generate** — Process each chunk through Qwen3-TTS
-5. **Concatenate** — Join audio chunks into single file
-6. **Play** — Stream through Gradio audio player
+1. **Upload** — Store document in library, extract title from headers
+2. **Duplicate Check** — Compute SHA-256 hash, prompt if content already exists
+3. **Extract** — Strip markdown formatting, remove URLs, keep readable text
+4. **Chunk** — Split at sentence boundaries (~800 chars per chunk), CJK-aware
+5. **Generate** — Process each chunk through Qwen3-TTS with progress tracking
+6. **Concatenate** — Join audio chunks into single file
+7. **Play** — Stream through custom HTML5 audio player with extended speed control
+
+---
+
+## UI Comparison
+
+| Feature | NiceGUI (Recommended) | Gradio (Legacy) |
+|---------|----------------------|-----------------|
+| Speed Control | 0.5x - 3x | 0.5x - 2x |
+| Progress Indicator | ✅ Chunk-by-chunk | ❌ Hidden |
+| Title Auto-Prefill | ✅ | ❌ |
+| Duplicate Detection | ✅ | ❌ |
+| Library UI | Scrollable cards | Dropdown |
+| CJK Chunking | ✅ Proper | ❌ ASCII only |
+| Screen Recording | ✅ Press 'D' | ❌ |
 
 ---
 
@@ -128,14 +171,20 @@ readaloud/
 
 - **Markdown/Text only** — No PDF or DOCX support yet
 - **No streaming** — Full audio generates before playback
-- **Speed limited to 2x** — Gradio's native player limitation
+- **WebM recording** — Chrome on macOS outputs WebM; convert to MP4 for X/Twitter
 
 ---
 
 ## Roadmap
 
+- [x] Extended speed control (up to 3x)
+- [x] Progress indicator during generation
+- [x] CJK text chunking
+- [x] Title auto-extraction
+- [x] Duplicate document detection
+- [x] Scrollable library cards
+- [x] Screen recording for feedback
 - [ ] Voice cloning from reference audio
-- [ ] Extended speed control (up to 3x)
 - [ ] Synchronized text highlighting (karaoke mode)
 - [ ] PDF support
 - [ ] Real-time streaming playback
@@ -145,7 +194,7 @@ readaloud/
 
 ## Built With
 
-This project was built in a single 7-hour session using AI-augmented development with Claude. The entire codebase—from architecture to working MVP—was produced through iterative prompting and refinement.
+This project was built using AI-augmented development with Claude. The initial MVP was produced in a 7-hour session, with subsequent enhancements adding NiceGUI migration and advanced features.
 
 ---
 

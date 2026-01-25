@@ -22,6 +22,9 @@ def extract_text_from_markdown(content: str) -> str:
     # Remove links but keep text
     text = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', text)
 
+    # Remove plain URLs (http/https)
+    text = re.sub(r'https?://[^\s\)\]]+', '', text)
+
     # Remove headers markers but keep text
     text = re.sub(r'^#{1,6}\s+', '', text, flags=re.MULTILINE)
 
@@ -54,9 +57,11 @@ def chunk_text(text: str, max_chars: int = 800) -> List[str]:
 
     Splits at sentence boundaries, respecting max character limit.
     Ensures no chunk exceeds the limit while keeping sentences intact.
+    Handles both ASCII and CJK (Chinese/Japanese/Korean) punctuation.
     """
-    # Split into sentences (handles ., !, ?)
-    sentence_pattern = r'(?<=[.!?])\s+'
+    # Split into sentences (handles ASCII and CJK sentence-ending punctuation)
+    # ASCII: . ! ?   CJK: 。！？
+    sentence_pattern = r'(?<=[.!?。！？])\s*'
     sentences = re.split(sentence_pattern, text)
 
     chunks = []
@@ -69,8 +74,9 @@ def chunk_text(text: str, max_chars: int = 800) -> List[str]:
 
         # If sentence itself exceeds max, split by clauses
         if len(sentence) > max_chars:
-            # Split by commas, semicolons, or colons
-            sub_parts = re.split(r'[,;:]\s+', sentence)
+            # Split by commas, semicolons, colons (ASCII and CJK)
+            # ASCII: , ; :   CJK: ，；：
+            sub_parts = re.split(r'[,;:，；：]\s*', sentence)
             for part in sub_parts:
                 part = part.strip()
                 if not part:
@@ -106,7 +112,7 @@ def estimate_duration(text: str, words_per_minute: int = 150) -> float:
 def get_text_stats(text: str) -> dict:
     """Return statistics about the text."""
     words = text.split()
-    sentences = re.split(r'[.!?]+', text)
+    sentences = re.split(r'[.!?。！？]+', text)
 
     return {
         "characters": len(text),
@@ -132,8 +138,8 @@ def get_sentences(text: str) -> List[Dict[str, Any]]:
     Returns:
         List of sentence dictionaries
     """
-    # Split into sentences, keeping the delimiter
-    sentence_pattern = r'(?<=[.!?])\s+'
+    # Split into sentences (handles ASCII and CJK sentence-ending punctuation)
+    sentence_pattern = r'(?<=[.!?。！？])\s*'
     parts = re.split(sentence_pattern, text)
 
     sentences = []

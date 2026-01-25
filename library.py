@@ -3,13 +3,50 @@ Library management for ReadAloud.
 Handles persistent storage of documents, audio, and timing data.
 """
 
+import hashlib
 import json
 import os
+import re
 import shutil
 import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Any
+
+
+def compute_content_hash(content: str) -> str:
+    """Compute SHA-256 hash of document content."""
+    return hashlib.sha256(content.encode('utf-8')).hexdigest()
+
+
+def find_by_hash(content_hash: str) -> Optional[Dict[str, Any]]:
+    """
+    Find a library item by content hash.
+
+    Args:
+        content_hash: SHA-256 hash of the document content
+
+    Returns:
+        Item metadata if found, None otherwise
+    """
+    index = _load_index()
+    for item in index.get("items", []):
+        if item.get("content_hash") == content_hash:
+            return item
+    return None
+
+
+def count_words(text: str) -> int:
+    """Count words, handling Chinese/Japanese/Korean text."""
+    # CJK Unicode ranges
+    cjk_pattern = re.compile(r'[\u4e00-\u9fff\u3400-\u4dbf\u3040-\u309f\u30a0-\u30ff\uac00-\ud7af]')
+
+    cjk_chars = len(cjk_pattern.findall(text))
+    # Remove CJK chars, count remaining words
+    non_cjk = cjk_pattern.sub(' ', text)
+    other_words = len(non_cjk.split())
+
+    return cjk_chars + other_words
 
 # Default paths
 LIBRARY_DIR = Path(__file__).parent / "library"
@@ -80,10 +117,13 @@ def create_item(
         if title is None:
             title = Path(filename).stem
 
-    # Count words
+    # Count words (handles CJK text properly)
     from text_processor import extract_text_from_markdown
     plain_text = extract_text_from_markdown(markdown_content)
-    word_count = len(plain_text.split())
+    word_count = count_words(plain_text)
+
+    # Compute content hash for duplicate detection
+    content_hash = compute_content_hash(markdown_content)
 
     # Create metadata
     metadata = {
@@ -91,6 +131,7 @@ def create_item(
         "title": title,
         "filename": filename,
         "created_at": datetime.now().isoformat(),
+        "content_hash": content_hash,
         "audio_generated": False,
         "audio_duration_seconds": None,
         "word_count": word_count,
@@ -119,6 +160,7 @@ def create_item(
         "title": title,
         "filename": filename,
         "created_at": metadata["created_at"],
+        "content_hash": content_hash,
         "audio_generated": False,
         "word_count": word_count,
     })
