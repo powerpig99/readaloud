@@ -4,9 +4,16 @@ This file provides guidance to Claude Code when working with this repository. It
 
 ## Project Overview
 
-ReadAloud v2 is a local-first text-to-speech web application with library management. Built in 7 hours using AI-augmented development.
+ReadAloud v3 is a local-first text-to-speech web application with library management.
 
-**Current Status**: Two UI options available - Gradio (original) and NiceGUI (new, recommended).
+**Development Timeline:**
+- V2 (Gradio MVP): 7 hours
+- V3 (NiceGUI): +5-7 hours
+- Total: ~12-14 hours using AI-augmented development
+
+**Tested on:** MacBook Pro M4 with 48GB RAM
+
+**Current Status**: Two UI options available - Gradio (legacy) and NiceGUI (recommended, v3.0.0).
 
 ## UI Options
 
@@ -207,3 +214,71 @@ Without `selfBrowserSurface: 'include'`, Chrome hides the current tab from the p
 **Hotkey:** Press 'D' key (ignored when typing in input/textarea fields)
 
 **Format:** Tries MP4 first (X/Twitter compatible), falls back to WebM. Chrome on macOS may not support MP4 - convert with: `ffmpeg -i input.webm -c:v libx264 -c:a aac output.mp4`
+
+## Lessons Learned (V3 Development)
+
+### NiceGUI Gotchas
+
+1. **`ui.html()` requires `sanitize=False`** for custom HTML with JavaScript
+   ```python
+   ui.html('<audio id="player">...</audio>', sanitize=False)
+   ```
+
+2. **`ui.upload()` single file** - Use `max_files=1` to restrict to one file
+   ```python
+   ui.upload(max_files=1, on_upload=handler)
+   ```
+
+3. **Fixed height scroll areas** - Use `.style("height: 300px")` not just `.classes("h-64")` for reliable sizing
+
+4. **Async dialogs** - Use `await dialog` to wait for user response
+   ```python
+   with ui.dialog() as dialog, ui.card():
+       # ... buttons that call dialog.close()
+   dialog.open()
+   await dialog  # Waits until dialog.close() is called
+   ```
+
+### Browser APIs
+
+1. **Screen recording current tab** - Chrome hides current tab by default. MUST include:
+   ```javascript
+   getDisplayMedia({
+       selfBrowserSurface: 'include',  // Shows current tab option
+       preferCurrentTab: true           // Pre-selects current tab
+   })
+   ```
+
+2. **MediaRecorder format** - Chrome on macOS doesn't support MP4 natively, outputs WebM. For X/Twitter compatibility, convert with ffmpeg.
+
+3. **Stream end detection** - Handle both manual stop AND Chrome's "Stop sharing" button:
+   ```javascript
+   stream.getVideoTracks()[0].onended = () => stopAndSave();
+   ```
+
+### Text Processing
+
+1. **CJK punctuation** - Chinese/Japanese/Korean use full-width punctuation, not ASCII:
+   - Sentence endings: `。！？` (not `. ! ?`)
+   - Clause breaks: `，；：` (not `, ; :`)
+
+2. **URL stripping** - Remove plain URLs before chunking:
+   ```python
+   text = re.sub(r'https?://[^\s\)\]]+', '', text)
+   ```
+
+### GitHub
+
+1. **CDN caching** - Images may not update immediately after push. Hard refresh or wait a few minutes.
+
+2. **Repo completeness checklist:**
+   - LICENSE file (not just mention in README)
+   - README badges
+   - Topics/tags in About section
+   - Release with version tag
+
+### Model Loading
+
+1. **1.7B model** takes significantly longer to load than 0.6B (~2-3 minutes for first chunk on M4)
+2. **MPS (Apple Silicon)** works but `flash-attn` not available - uses slower PyTorch fallback
+3. **Model is cached** after first load - subsequent generations are faster
