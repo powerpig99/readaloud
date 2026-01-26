@@ -4,10 +4,11 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![NiceGUI](https://img.shields.io/badge/UI-NiceGUI-green.svg)](https://nicegui.io/)
 [![Local First](https://img.shields.io/badge/Local-First-purple.svg)](#)
+[![Version](https://img.shields.io/badge/version-5.0.0-brightgreen.svg)](https://github.com/powerpig99/readaloud/releases)
 
 **Local-first text-to-speech reader powered by Qwen3-TTS.**
 
-Upload markdown or text files, choose from 9 natural voices, and listen at your preferred speed. Everything runs locally—no cloud, no accounts.
+Upload markdown or text files, choose from 9 natural voices or clone any voice, and listen at your preferred speed. Everything runs locally—no cloud, no accounts.
 
 ![ReadAloud Screenshot](screenshot.png)
 
@@ -40,17 +41,24 @@ This project is what happens when personal resonance meets technical timing.
 ### Core
 - **Document Library** — Persistent storage with card-based UI and selection highlighting
 - **9 Natural Voices** — Ryan, Aiden, Serena, Vivian, Uncle Fu, Dylan, Eric, Ono Anna, Sohee
+- **Voice Cloning** — Clone any voice from 3-30 second reference audio (V4)
 - **10 Languages** — English, Chinese, Japanese, Korean, French, German, Spanish, Portuguese, Russian, Italian
-- **Speed Control** — 0.5x to 3x playback speed (NiceGUI version)
+- **Speed Control** — 0.5x to 3x playback speed
 - **Model Choice** — 0.6B (fast) or 1.7B (higher quality)
 - **Fully Local** — No cloud, no accounts, your data stays on your machine
 
-### NiceGUI Version Enhancements (Recommended)
+### V5: Unified Generation Interface (Latest)
+- **Auto-Chunking** — Long documents (5000+ words with headings) automatically split into chapters
+- **Book Support** — Expandable cards show chapters with individual audio status
+- **Chapter Generation** — Generate audio for specific chapters, not just whole documents
+- **Separated Workflow** — Add documents first, generate audio later via fixed bottom section
+- **Mutually Exclusive Voice** — Stock voices and clone voices in one clear interface
+
+### Additional Features
 - **Title Auto-Prefill** — Extracts title from markdown `#` headers on upload
 - **Duplicate Detection** — SHA-256 content hashing with replace/cancel dialog
 - **CJK Text Chunking** — Properly splits Chinese/Japanese/Korean on sentence boundaries (。！？，；：)
 - **Progress Indicator** — Shows "Generating chunk X/Y..." during audio generation
-- **Extended Speed Control** — 0.5x to 3x via custom HTML5 audio player
 - **Screen Recording** — Press 'D' key to record current tab for sharing feedback
 
 ---
@@ -79,17 +87,10 @@ pip install -r requirements.txt
 
 ### Run
 
-**NiceGUI Version (Recommended):**
 ```bash
 python app_nicegui.py
 ```
 Open http://127.0.0.1:8080 in your browser.
-
-**Gradio Version (Legacy):**
-```bash
-python app.py
-```
-Open http://127.0.0.1:7860 in your browser.
 
 **First run:** The TTS model (~1.5GB) downloads automatically from HuggingFace.
 
@@ -97,18 +98,36 @@ Open http://127.0.0.1:7860 in your browser.
 
 ## Usage
 
-1. Click **Add New Document** accordion
-2. Upload a `.md` or `.txt` file (title auto-fills from content)
-3. Select voice, language, and model size
-4. Click **Add & Generate Audio**
-5. Watch progress indicator during generation
-6. Use the audio player to listen—select speed with the button row (0.5x-3x)
+### Adding Documents
 
-Your documents and audio persist in the library. Click any card to switch between them.
+1. Expand the **Add to Library** section
+2. Upload a `.md` or `.txt` file (title auto-fills from content)
+3. Click **Add to Library**
+
+Long documents with chapter headings are automatically detected and split into books.
+
+### Generating Audio
+
+1. Select a document or chapter from the library
+2. In the **Generate Audio** section at the bottom:
+   - Choose a **Stock Voice** (preset) OR
+   - Choose a **Clone Voice** (preset samples or upload your own)
+3. Select language and model size
+4. Click **Generate Audio**
+
+### Voice Cloning
+
+To clone a voice:
+1. Select "Custom - Upload..." from the Clone Voice dropdown
+2. Upload 3-30 seconds of clear speech audio
+3. Enter the exact transcript of what's spoken
+4. Generate audio — the cloned voice will be used
+
+Preset clone samples included: Elon Musk, Jensen Huang, Donald Trump, Bill Gates
 
 ### Hidden Features
 
-- **Screen Recording**: Press `D` key (not while typing) to record the current tab with audio. Press `D` again or click Chrome's "Stop sharing" to save. Output is WebM (convert to MP4 for X/Twitter with `ffmpeg -i input.webm -c:v libx264 -c:a aac output.mp4`)
+- **Screen Recording**: Press `D` key (not while typing) to record the current tab with audio. Press `D` again or click Chrome's "Stop sharing" to save.
 
 ---
 
@@ -119,8 +138,7 @@ Your documents and audio persist in the library. Click any card to switch betwee
 | Component | Technology |
 |-----------|------------|
 | TTS Model | Qwen3-TTS (0.6B or 1.7B) |
-| UI (Recommended) | NiceGUI + Tailwind CSS |
-| UI (Legacy) | Gradio 4.x |
+| UI | NiceGUI + Tailwind CSS |
 | Audio | soundfile, numpy |
 | Text Processing | regex with CJK support |
 
@@ -128,47 +146,46 @@ Your documents and audio persist in the library. Click any card to switch betwee
 
 ```
 readaloud/
-├── app_nicegui.py      # NiceGUI UI (recommended) - port 8080
-├── app.py              # Gradio UI (legacy) - port 7860
-├── tts_engine.py       # Qwen3-TTS model wrapper
-├── library.py          # Document/audio persistence with content hashing
-├── text_processor.py   # Markdown parsing, CJK-aware text chunking
+├── app_nicegui.py      # NiceGUI UI - port 8080
+├── tts_engine.py       # Qwen3-TTS model wrapper + voice cloning
+├── library.py          # Document/book/audio persistence
+├── text_processor.py   # Markdown parsing, auto-chunking, CJK support
 ├── audio_processor.py  # Audio duration utilities
 ├── alignment.py        # Timing estimation
-├── sync.py             # Sync calculations
 ├── data/
-│   └── library.json    # Library index with content hashes
-└── library/            # Persistent storage (gitignored)
-    └── {doc_id}/
-        ├── document.md
-        ├── audio.wav
-        ├── timing.json
-        └── metadata.json
+│   └── library.json    # Library index
+├── library/            # Persistent storage (gitignored)
+│   └── {item_id}/
+│       ├── document.md
+│       ├── audio.wav
+│       ├── timing.json
+│       ├── metadata.json
+│       └── chapters_audio/     # For books
+│           ├── 00-chapter.wav
+│           └── 00-timing.json
+└── voice_samples/      # Clone voice presets
 ```
 
 ### How It Works
 
 1. **Upload** — Store document in library, extract title from headers
-2. **Duplicate Check** — Compute SHA-256 hash, prompt if content already exists
-3. **Extract** — Strip markdown formatting, remove URLs, keep readable text
-4. **Chunk** — Split at sentence boundaries (~800 chars per chunk), CJK-aware
-5. **Generate** — Process each chunk through Qwen3-TTS with progress tracking
-6. **Concatenate** — Join audio chunks into single file
-7. **Play** — Stream through custom HTML5 audio player with extended speed control
+2. **Auto-Chunk** — Detect long docs (5000+ words, 2+ headings), split into chapters
+3. **Duplicate Check** — Compute SHA-256 hash, prompt if content already exists
+4. **Extract** — Strip markdown formatting, remove URLs, keep readable text
+5. **Chunk** — Split at sentence boundaries (~800 chars per chunk), CJK-aware
+6. **Generate** — Process each chunk through Qwen3-TTS with progress tracking
+7. **Concatenate** — Join audio chunks into single file
+8. **Play** — Stream through custom HTML5 audio player with extended speed control
 
 ---
 
-## UI Comparison
+## Version History
 
-| Feature | NiceGUI (Recommended) | Gradio (Legacy) |
-|---------|----------------------|-----------------|
-| Speed Control | 0.5x - 3x | 0.5x - 2x |
-| Progress Indicator | ✅ Chunk-by-chunk | ❌ Hidden |
-| Title Auto-Prefill | ✅ | ❌ |
-| Duplicate Detection | ✅ | ❌ |
-| Library UI | Scrollable cards | Dropdown |
-| CJK Chunking | ✅ Proper | ❌ ASCII only |
-| Screen Recording | ✅ Press 'D' | ❌ |
+| Version | Features |
+|---------|----------|
+| **v5.0.0** | Unified generation interface, book/chapter support, auto-chunking |
+| **v4.0.0** | Voice cloning with preset samples and custom upload |
+| **v3.0.0** | NiceGUI migration, CJK support, extended speed control |
 
 ---
 
@@ -176,7 +193,7 @@ readaloud/
 
 - **Markdown/Text only** — No PDF or DOCX support yet
 - **No streaming** — Full audio generates before playback
-- **WebM recording** — Chrome on macOS outputs WebM; convert to MP4 for X/Twitter
+- **WebM recording** — Chrome on macOS outputs WebM; convert to MP4 for X/Twitter with `ffmpeg -i input.webm -c:v libx264 -c:a aac output.mp4`
 
 ---
 
@@ -189,7 +206,9 @@ readaloud/
 - [x] Duplicate document detection
 - [x] Scrollable library cards
 - [x] Screen recording for feedback
-- [ ] Voice cloning from reference audio
+- [x] Voice cloning from reference audio
+- [x] Book/chapter support with auto-chunking
+- [x] Unified generation interface
 - [ ] Synchronized text highlighting (karaoke mode)
 - [ ] PDF support
 - [ ] Real-time streaming playback
@@ -201,9 +220,11 @@ readaloud/
 
 This project was built using AI-augmented development with Claude:
 - **V2 (Gradio MVP)**: 7 hours — core TTS, library management, basic UI
-- **V3 (NiceGUI)**: +5-7 hours — modern UI, CJK support, duplicate detection, screen recording
+- **V3 (NiceGUI)**: +5-7 hours — modern UI, CJK support, duplicate detection
+- **V4 (Voice Cloning)**: +2 hours — clone any voice from reference audio
+- **V5 (Unified UI)**: +4 hours — book support, chapter generation, streamlined interface
 
-Total development time: ~12-14 hours for a full-featured local TTS application.
+Total development time: ~18-20 hours for a full-featured local TTS application with voice cloning.
 
 **Tested on**: MacBook Pro M4 with 48GB RAM. Performance will vary on other hardware.
 
