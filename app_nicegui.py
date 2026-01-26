@@ -8,7 +8,6 @@ from nicegui import ui, app, run
 import asyncio
 import tempfile
 import time
-import os
 from pathlib import Path
 from typing import Optional
 from dataclasses import dataclass, field
