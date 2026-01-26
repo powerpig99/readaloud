@@ -24,10 +24,13 @@ from text_processor import (
     chunk_text,
     get_text_stats,
     get_sentences,
+    should_auto_chunk,
+    split_into_chapters,
 )
 from tts_engine import (
     generate_long_text,
     save_audio,
+    create_voice_clone_prompt,
 )
 from audio_processor import get_audio_duration
 import library
@@ -58,6 +61,28 @@ VOICES = {
     "Eric (Sichuan Male)": "eric",
     "Ono Anna (Japanese Female)": "ono_anna",
     "Sohee (Korean Female)": "sohee",
+}
+
+# Voice cloning samples (pre-loaded)
+VOICE_SAMPLES_DIR = Path(__file__).parent / "voice_samples"
+CLONE_SAMPLES = {
+    "Custom (Upload your own)": None,
+    "Elon Musk": {
+        "audio": "elon-musk_trimmed.wav",
+        "transcript": "elon-musk.txt",
+    },
+    "Jensen Huang (NVIDIA)": {
+        "audio": "jensen-huang_trimmed.wav",
+        "transcript": "jensen-huang.txt",
+    },
+    "Donald Trump": {
+        "audio": "donald-trump.wav",
+        "transcript": "donald-trump.txt",
+    },
+    "Bill Gates": {
+        "audio": "bill_gates_trimmed.wav",
+        "transcript": "bill_gates.txt",
+    },
 }
 
 # Initialize library on startup
@@ -296,7 +321,8 @@ class ReadAloudApp:
             ui.notify(f"Error: {str(e)}", type="negative")
 
     async def add_and_generate(self, file_content: bytes, filename: str, title: str,
-                                voice: str, lang: str, model_size: str):
+                                voice: str, lang: str, model_size: str,
+                                voice_prompt=None):
         """Add document to library and generate audio."""
         if not file_content:
             ui.notify("No file uploaded", type="warning")
@@ -338,8 +364,8 @@ class ReadAloudApp:
                 chunks,
                 lang.lower(),    # language
                 size,            # model_size
-                None,            # voice_prompt
-                speaker,         # speaker
+                voice_prompt,    # voice_prompt (None for preset, or clone prompt)
+                speaker,         # speaker (used if voice_prompt is None)
                 progress_callback,
             )
 
@@ -350,8 +376,14 @@ class ReadAloudApp:
             duration = get_audio_duration(temp_path)
             library.save_audio(item_id, temp_path, duration)
 
+            # Track voice settings including clone mode
+            voice_settings = {
+                "voice": speaker,
+                "model_size": size,
+                "mode": "clone" if voice_prompt is not None else "preset",
+            }
             library.update_item(item_id, {
-                "voice_settings": {"voice": speaker, "model_size": size},
+                "voice_settings": voice_settings,
                 "language": lang.lower(),
             })
 
@@ -668,8 +700,8 @@ class ReadAloudApp:
 
             ui.separator().classes("my-4")
 
-            # Add new document section
-            with ui.expansion("Add New Document", icon="add").classes("w-full"):
+            # Add new document section (simplified - just adds to library, no audio generation)
+            with ui.expansion("Add to Library", icon="add").classes("w-full"):
                 with ui.column().classes("w-full gap-4 p-4"):
                     # File upload handler - store content and filename for later use
                     async def handle_upload(e):
@@ -707,39 +739,18 @@ class ReadAloudApp:
                         placeholder="Auto-extracted if empty",
                     ).classes("w-full")
 
-                    ui.markdown("#### Voice Settings").classes("font-semibold mt-4")
-
-                    voice_select = ui.select(
-                        options=list(VOICES.keys()),
-                        value="Ryan (English Male)",
-                        label="Voice",
-                    ).classes("w-full")
-
-                    with ui.row().classes("w-full gap-4"):
-                        language_select = ui.select(
-                            options=LANGUAGES,
-                            value="English",
-                            label="Language",
-                        ).classes("flex-1")
-
-                        model_select = ui.select(
-                            options=["0.6B (Fast)", "1.7B (Quality)"],
-                            value="0.6B (Fast)",
-                            label="Model",
-                        ).classes("flex-1")
-
-                    async def on_generate():
+                    async def add_to_library_only():
+                        """Add file to library without generating audio."""
                         if not hasattr(self, '_uploaded_content') or self._uploaded_content is None:
                             ui.notify("Please upload a file first", type="warning")
                             return
 
-                        # Use stored file content and filename
-                        file_content = self._uploaded_content
-                        filename = self._uploaded_filename
-
-                        # Check for duplicate content
                         try:
-                            content = file_content.decode('utf-8')
+                            content = self._uploaded_content.decode('utf-8')
+                            filename = self._uploaded_filename
+                            title = title_input.value.strip() if title_input.value else None
+
+                            # Check for duplicate content
                             content_hash = library.compute_content_hash(content)
                             existing = library.find_by_hash(content_hash)
 
@@ -753,28 +764,61 @@ class ReadAloudApp:
                                     # Delete existing item first
                                     library.delete_item(existing['id'])
                                     ui.notify(f"Replaced: {existing['title']}", type="info")
-                        except Exception:
-                            pass  # Continue with upload on any error
 
-                        await self.add_and_generate(
-                            file_content,
-                            filename,
-                            title_input.value,
-                            voice_select.value,
-                            language_select.value,
-                            model_select.value,
-                        )
-                        # Clear upload state
-                        self._uploaded_content = None
-                        self._uploaded_filename = None
-                        upload.reset()
-                        title_input.value = ""
+                            # Extract plain text for analysis
+                            text = extract_text_from_markdown(content)
+
+                            # Check if this should be a book (long doc with chapters)
+                            if should_auto_chunk(text):
+                                # Split into chapters and create book
+                                chapters = split_into_chapters(content)
+
+                                # Extract title from first heading if not provided
+                                if title is None:
+                                    lines = content.strip().split('\n')
+                                    for line in lines:
+                                        if line.startswith('#'):
+                                            title = line.lstrip('#').strip()
+                                            break
+                                    if title is None:
+                                        title = Path(filename).stem
+
+                                item = library.create_book(
+                                    title=title,
+                                    filename=filename,
+                                    chapters=chapters,
+                                    content_hash=content_hash,
+                                )
+                                ui.notify(
+                                    f"Added book: {title} ({item['chapter_count']} chapters, {item['total_words']} words)",
+                                    type="positive"
+                                )
+                            else:
+                                # Create single document
+                                item = library.create_item(content, filename, title)
+                                stats = get_text_stats(text)
+                                ui.notify(f"Added: {item['title']} ({stats['words']} words)", type="positive")
+
+                            # Refresh library and select new item
+                            self.refresh_library()
+                            self._on_card_click(item['id'])
+
+                            # Clear upload state
+                            self._uploaded_content = None
+                            self._uploaded_filename = None
+                            upload.reset()
+                            title_input.value = ""
+
+                        except Exception as e:
+                            import traceback
+                            traceback.print_exc()
+                            ui.notify(f"Error: {str(e)}", type="negative")
 
                     ui.button(
-                        "Add & Generate Audio",
-                        on_click=on_generate,
+                        "Add to Library",
+                        on_click=add_to_library_only,
                         color="primary",
-                    ).classes("w-full mt-4")
+                    ).classes("w-full mt-2")
 
 
 # Serve audio files from the library directory

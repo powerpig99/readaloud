@@ -382,3 +382,128 @@ def has_audio(item_id: str) -> bool:
 def has_timing(item_id: str) -> bool:
     """Check if an item has timing data."""
     return get_timing_path(item_id).exists()
+
+
+def create_book(
+    title: str,
+    filename: str,
+    chapters: List[Dict[str, Any]],
+    content_hash: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Create a book with multiple chapters.
+
+    A book stores chapters as a list in metadata.json rather than
+    as separate library items. This keeps related content together.
+
+    Args:
+        title: Book title
+        filename: Original filename
+        chapters: List of chapter dicts with keys:
+            - title: Chapter title
+            - content: Chapter markdown content
+            - word_count: Number of words in chapter
+        content_hash: Optional pre-computed content hash
+
+    Returns:
+        The created book metadata
+    """
+    init_library()
+
+    # Generate unique ID
+    book_id = str(uuid.uuid4())
+    book_dir = _get_item_dir(book_id)
+    book_dir.mkdir(parents=True, exist_ok=True)
+
+    # Calculate totals
+    total_words = sum(ch.get('word_count', 0) for ch in chapters)
+    chapter_count = len(chapters)
+
+    # Prepare chapters for storage (add audio_path field)
+    stored_chapters = []
+    for ch in chapters:
+        stored_chapters.append({
+            'title': ch['title'],
+            'content': ch['content'],
+            'word_count': ch.get('word_count', 0),
+            'audio_path': None,  # Will be set when audio is generated
+        })
+
+    # Compute content hash if not provided
+    if content_hash is None:
+        full_content = '\n\n'.join(ch['content'] for ch in chapters)
+        content_hash = compute_content_hash(full_content)
+
+    # Create metadata
+    metadata = {
+        "id": book_id,
+        "type": "book",
+        "title": title,
+        "filename": filename,
+        "created_at": datetime.now().isoformat(),
+        "content_hash": content_hash,
+        "chapter_count": chapter_count,
+        "total_words": total_words,
+        "chapters": stored_chapters,
+        "language": "english",
+        "voice_settings": {
+            "mode": "default",
+            "speaker": "serena",
+            "model_size": "0.6B"
+        }
+    }
+
+    # Save full document (all chapters concatenated)
+    doc_path = book_dir / "document.md"
+    full_content = '\n\n'.join(ch['content'] for ch in chapters)
+    with open(doc_path, 'w', encoding='utf-8') as f:
+        f.write(full_content)
+
+    # Save metadata
+    meta_path = book_dir / "metadata.json"
+    with open(meta_path, 'w', encoding='utf-8') as f:
+        json.dump(metadata, f, indent=2, ensure_ascii=False)
+
+    # Update index (summary info only, not full chapters)
+    index = _load_index()
+    index["items"].append({
+        "id": book_id,
+        "type": "book",
+        "title": title,
+        "filename": filename,
+        "created_at": metadata["created_at"],
+        "content_hash": content_hash,
+        "chapter_count": chapter_count,
+        "total_words": total_words,
+        "word_count": total_words,  # For compatibility with existing UI
+        "audio_generated": False,
+    })
+    _save_index(index)
+
+    return metadata
+
+
+def get_chapter_text(book_id: str, chapter_idx: int) -> Optional[str]:
+    """
+    Get the text content of a specific chapter.
+
+    Args:
+        book_id: The book ID
+        chapter_idx: Zero-based chapter index
+
+    Returns:
+        Chapter content as plain text, or None if not found
+    """
+    item = get_item(book_id)
+    if item is None:
+        return None
+
+    # Check this is actually a book
+    if item.get('type') != 'book':
+        return None
+
+    chapters = item.get('chapters', [])
+    if chapter_idx < 0 or chapter_idx >= len(chapters):
+        return None
+
+    return chapters[chapter_idx].get('content')
