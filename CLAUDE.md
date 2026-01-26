@@ -4,23 +4,25 @@ This file provides guidance to Claude Code when working with this repository. It
 
 ## Project Overview
 
-ReadAloud v3 is a local-first text-to-speech web application with library management.
+ReadAloud v5 is a local-first text-to-speech web application with library management.
 
 **Development Timeline:**
 - V2 (Gradio MVP): 7 hours
 - V3 (NiceGUI): +5-7 hours
-- Total: ~12-14 hours using AI-augmented development
+- V4 (Voice cloning): +2 hours
+- V5 (Unified UI): +4 hours
+- Total: ~18-20 hours using AI-augmented development
 
 **Tested on:** MacBook Pro M4 with 48GB RAM
 
-**Current Status**: Two UI options available - Gradio (legacy) and NiceGUI (recommended, v3.0.0).
+**Current Status**: Two UI options available - Gradio (legacy) and NiceGUI (recommended, v5.0.0 with unified generation interface).
 
 ## UI Options
 
 ### NiceGUI Version (Recommended)
 - **File**: `app_nicegui.py`
 - **Port**: http://127.0.0.1:8080
-- **Features**: Full speed control (0.5x-3x), proper progress indicator, modern UI with Tailwind
+- **Features**: Voice cloning, full speed control (0.5x-3x), proper progress indicator, modern UI with Tailwind
 
 ### Gradio Version (Legacy)
 - **File**: `app.py`
@@ -36,7 +38,11 @@ ReadAloud v3 is a local-first text-to-speech web application with library manage
 | Title auto-prefill | ❌ | ✅ | Extracts from `#` headers or uses filename |
 | Duplicate detection | ❌ | ✅ | SHA-256 hash check with replace/cancel dialog |
 | Scrollable library | ❌ | ✅ | Card-based with selection highlighting |
+| **Auto-chunking** | ❌ | ✅ | Long docs (5000+ words, 2+ headings) → books with chapters (V5) |
+| **Book/chapter support** | ❌ | ✅ | Expandable cards, chapter-level generation (V5) |
+| **Unified generation** | ❌ | ✅ | Fixed bottom section, separated upload from generation (V5) |
 | 9 preset voices | ✅ | ✅ | Ryan, Aiden, Serena, Vivian, Uncle Fu, Dylan, Eric, Ono Anna, Sohee |
+| **Voice cloning** | ❌ | ✅ | Clone any voice from 3-30s reference audio (V4) |
 | 10 languages | ✅ | ✅ | English, Chinese, Japanese, Korean, French, German, Spanish, Portuguese, Russian, Italian |
 | CJK chunking | ❌ | ✅ | Properly splits on `。！？，；：` for Chinese/Japanese/Korean |
 | Audio generation | ✅ | ✅ | Qwen3-TTS 0.6B or 1.7B models |
@@ -63,8 +69,8 @@ readaloud/
 ├── app.py              # Gradio UI (legacy) - port 7860
 ├── app_nicegui.py      # NiceGUI UI (recommended) - port 8080
 ├── tts_engine.py       # Qwen3-TTS wrapper, voice cloning
-├── library.py          # Document/audio CRUD operations
-├── text_processor.py   # Markdown parsing, text chunking
+├── library.py          # Document/book/audio CRUD operations
+├── text_processor.py   # Markdown parsing, text chunking, auto-chunking
 ├── audio_processor.py  # Audio duration utilities
 ├── alignment.py        # Simple timing estimation (WhisperX code exists)
 ├── sync.py             # Sync calculations (for future karaoke)
@@ -74,11 +80,15 @@ readaloud/
 ├── data/
 │   └── library.json    # Library index
 ├── library/            # Persistent storage (gitignored)
-│   └── {doc_id}/
+│   └── {item_id}/
 │       ├── document.md
 │       ├── audio.wav
 │       ├── timing.json
-│       └── metadata.json
+│       ├── metadata.json
+│       └── chapters_audio/     # For books (V5)
+│           ├── 00-chapter.wav
+│           └── 00-timing.json
+├── voice_samples/      # Clone voice presets
 ├── screenshot.png      # UI screenshot for README
 └── requirements.txt
 ```
@@ -111,26 +121,35 @@ pkill -f "python app"; lsof -ti:7860 -ti:8080 | xargs kill -9
 |------|--------------|-------------|
 | Main UI layout | `app_nicegui.py:ReadAloudApp.build_ui()` | `app.py:113-278` |
 | Library cards | `app_nicegui.py:_create_library_card()` | N/A (uses dropdown) |
-| Audio generation | `app_nicegui.py:add_and_generate()` | `app.py:add_and_generate()` |
+| **Book/chapter cards** | `app_nicegui.py:_create_chapter_row()` | N/A |
+| Audio generation | `app_nicegui.py:on_generate_from_section()` | `app.py:add_and_generate()` |
+| **Chapter generation** | `app_nicegui.py:_generate_chapter_audio()` | N/A |
+| **Generation section** | `app_nicegui.py:update_generation_section()` | N/A |
+| **Auto-chunking** | `text_processor.py:should_auto_chunk(), split_into_chapters()` | N/A |
 | Duplicate dialog | `app_nicegui.py:show_duplicate_dialog()` | N/A |
 | Custom audio player | `app_nicegui.py:update_audio_player()` | N/A (Gradio native) |
 | Speed control | `app_nicegui.py:set_speed()` | N/A (Gradio native) |
 | Screen recording | `app_nicegui.py:build_ui()` (JS injection) | N/A |
+| Voice cloning UI | `app_nicegui.py:_build_clone_options(), on_clone_voice_change()` | N/A |
+| Voice clone prompt | `tts_engine.py:create_voice_clone_prompt()` | Same |
 | TTS model loading | `tts_engine.py:load_model()` | Same |
 | Text chunking (CJK) | `text_processor.py:chunk_text()` | Same |
 | Content hashing | `library.py:compute_content_hash()` | Same |
+| **Book operations** | `library.py:create_book(), get_chapter_text()` | N/A |
 | Library operations | `library.py` | Same |
 
 ## Data Flow
 
 1. **Upload**: User uploads file → title auto-extracted → prefilled in input
-2. **Duplicate Check**: Content hash computed → check against library → show dialog if duplicate
-3. **Create**: `library.create_item()` → stores in `library/{uuid}/` with content hash
-4. **Generate**: `tts_engine.generate_long_text()` → chunks text (CJK-aware) → TTS each chunk → concatenate → save
-5. **Select**: Card click → highlight card → load text + audio path
-6. **Play**: NiceGUI uses custom HTML5 audio player; Gradio uses native player
-7. **Speed**: NiceGUI buttons control `audio.playbackRate` via JavaScript
-8. **Record**: Press 'D' → `getDisplayMedia()` → MediaRecorder → download MP4/WebM
+2. **Auto-chunk check** (V5): If 5000+ words AND 2+ headings → split into book with chapters
+3. **Duplicate Check**: Content hash computed → check against library → show dialog if duplicate
+4. **Create**: `library.create_item()` or `library.create_book()` → stores in `library/{uuid}/`
+5. **Select item**: Card click → highlight card → load text + audio → update generation section
+6. **Select chapter** (V5): Book expansion → chapter click → load chapter text + update generation section
+7. **Generate**: Use unified generation section → TTS → save audio (document or chapter)
+8. **Play**: NiceGUI uses custom HTML5 audio player; Gradio uses native player
+9. **Speed**: NiceGUI buttons control `audio.playbackRate` via JavaScript
+10. **Record**: Press 'D' → `getDisplayMedia()` → MediaRecorder → download MP4/WebM
 
 ## Voices Available
 
@@ -155,9 +174,12 @@ pkill -f "python app"; lsof -ti:7860 -ti:8080 | xargs kill -9
 | CJK text chunking | ✅ Done | Properly splits Chinese/Japanese/Korean text on `。！？，；：` |
 | Title prefill | ✅ Done | Auto-extracts title from markdown headers on file upload |
 | Duplicate detection | ✅ Done | SHA-256 content hashing with replace/cancel dialog |
+| Auto-chunking | ✅ Done (V5) | Long docs (5000+ words, 2+ headings) → books with chapters |
+| Book/chapter support | ✅ Done (V5) | Expandable cards, chapter-level audio generation |
+| Unified generation UI | ✅ Done (V5) | Fixed bottom section, separate upload from generation |
 | Scrollable library | ✅ Done | Card-based library view with selection highlighting |
 | Screen recording | ✅ Done | Press 'D' key to toggle (debug feature for X feedback) |
-| Voice cloning | ❌ Not started | Code exists in `tts_engine.py` but not exposed in UI |
+| Voice cloning | ✅ Done (V4) | Upload 3-30s reference audio + transcript to clone any voice |
 | Karaoke highlighting | ❌ Not started | Timing data saved, JS exists in `static/`, needs integration |
 | WhisperX alignment | ❌ Not started | Code exists in `alignment.py`, using simple estimation |
 | PDF support | ❌ Not started | |
@@ -185,13 +207,16 @@ This project uses NiceGUI. The Nice Vibes MCP server is configured for enhanced 
 
 When resuming work:
 1. Run `source venv/bin/activate && python app_nicegui.py`
-2. Check http://127.0.0.1:8080 loads correctly
+2. Check http://127.0.0.1:8080 loads correctly, title shows "ReadAloud v5"
 3. Test: Upload a file → verify title prefills from `#` header
 4. Test: Upload same file again → verify duplicate dialog appears
-5. Test: Generate audio, verify progress indicator shows chunk count
-6. Test: Click library cards → verify selection highlighting
-7. Test: Speed control buttons (should support 0.5x-3x)
-8. Test: Press 'D' key (not in input field) → select current tab → recording indicator → press 'D' again or click "Stop sharing" → file downloads
+5. Test: Upload long document (5000+ words with headings) → should create book with chapters
+6. Test: Click book → expands to show chapters → click chapter → loads in reader
+7. Test: Select item → Generation section shows item name and Generate button
+8. Test: Generate audio with Stock Voice → verify progress indicator shows chunk count
+9. Test: Generate audio with Clone Voice → verify no slot stack error
+10. Test: Speed control buttons (should support 0.5x-3x)
+11. Test: Press 'D' key (not in input field) → select current tab → recording indicator → press 'D' again or click "Stop sharing" → file downloads
 
 ## Screen Recording Implementation Notes
 
@@ -282,3 +307,11 @@ Without `selfBrowserSurface: 'include'`, Chrome hides the current tab from the p
 1. **1.7B model** takes significantly longer to load than 0.6B (~2-3 minutes for first chunk on M4)
 2. **MPS (Apple Silicon)** works but `flash-attn` not available - uses slower PyTorch fallback
 3. **Model is cached** after first load - subsequent generations are faster
+
+### Voice Cloning (V4)
+
+1. **Base model required** - Voice cloning uses `Qwen3-TTS-12Hz-*-Base` model, NOT CustomVoice
+2. **Reference audio** - Best results with 3-30 seconds of clean speech
+3. **Transcript required** - Exact text of what's spoken in reference audio
+4. **Model switching** - App loads separate Base model for cloning (cached independently)
+5. **Voice prompt** - Created once per reference audio, reused for all chunks
