@@ -6,6 +6,95 @@ Handles markdown parsing and text chunking for TTS.
 import re
 from typing import List, Dict, Any
 
+from library import count_words
+
+
+def should_auto_chunk(text: str, word_threshold: int = 5000) -> bool:
+    """
+    Return True if text should be split into chapters.
+
+    Criteria:
+    - Text has at least `word_threshold` words (default 5000)
+    - Text has at least 2 level-1 or level-2 headings (# or ##)
+
+    Args:
+        text: The markdown text to check
+        word_threshold: Minimum word count to consider chunking
+
+    Returns:
+        True if text should be split into chapters
+    """
+    # Check word count first (fast check)
+    words = count_words(text)
+    if words < word_threshold:
+        return False
+
+    # Check for heading structure (# or ## at start of line)
+    headings = re.findall(r'^#{1,2}\s+.+$', text, re.MULTILINE)
+    return len(headings) >= 2
+
+
+def split_into_chapters(text: str) -> List[Dict[str, Any]]:
+    """
+    Split markdown by headings into chapter dicts.
+
+    Splits on level-1 (#) and level-2 (##) headings. Content before the
+    first heading becomes an "Introduction" chapter if non-empty.
+
+    Args:
+        text: The markdown text to split
+
+    Returns:
+        List of chapter dicts with keys:
+        - title: Chapter title (heading text without # markers)
+        - content: Full chapter content including the heading
+        - word_count: Number of words in the chapter (CJK-aware)
+    """
+    # Pattern to split on # or ## headings (but not ### or deeper)
+    # Captures the heading line as a delimiter
+    heading_pattern = r'^(#{1,2}\s+.+)$'
+
+    # Split text, keeping the delimiters (headings)
+    parts = re.split(heading_pattern, text, flags=re.MULTILINE)
+
+    chapters = []
+
+    # Handle content before first heading (if any)
+    if parts and parts[0].strip():
+        intro_content = parts[0].strip()
+        chapters.append({
+            'title': 'Introduction',
+            'content': intro_content,
+            'word_count': count_words(intro_content)
+        })
+        parts = parts[1:]  # Remove the intro from parts
+    elif parts:
+        parts = parts[1:]  # Skip empty first part
+
+    # Process heading-content pairs
+    # After split with capturing group, odd indices are headings, even are content
+    i = 0
+    while i < len(parts):
+        heading = parts[i].strip() if i < len(parts) else ''
+        content_after = parts[i + 1].strip() if i + 1 < len(parts) else ''
+
+        if heading:
+            # Extract title (remove # markers)
+            title = re.sub(r'^#{1,2}\s+', '', heading)
+
+            # Full chapter content includes the heading
+            full_content = heading + '\n\n' + content_after if content_after else heading
+
+            chapters.append({
+                'title': title,
+                'content': full_content,
+                'word_count': count_words(full_content)
+            })
+
+        i += 2
+
+    return chapters
+
 
 def extract_text_from_markdown(content: str) -> str:
     """
