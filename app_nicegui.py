@@ -169,6 +169,10 @@ class ReadAloudApp:
         self.gen_model = None
         self.gen_button = None
 
+        # Voice cloning state
+        self.clone_audio_path: Optional[str] = None
+        self.clone_transcript: Optional[str] = None
+
     def refresh_library(self):
         """Refresh library cards in the scrollable container."""
         items = library.get_all_items()
@@ -200,6 +204,7 @@ class ReadAloudApp:
         """Create a clickable card for a library item."""
         item_id = item['id']
         has_audio = item.get('audio_generated', False)
+        is_book = item.get('type') == 'book'
 
         card = ui.card().classes(
             "w-full cursor-pointer hover:bg-blue-50 transition-colors p-3"
@@ -209,7 +214,13 @@ class ReadAloudApp:
             with ui.row().classes("w-full items-center justify-between"):
                 with ui.column().classes("gap-0"):
                     ui.label(item['title']).classes("font-semibold text-sm truncate max-w-xs")
-                    ui.label(f"{item['word_count']} words").classes("text-xs text-gray-500")
+                    # Handle both documents (word_count) and books (total_words)
+                    word_count = item.get('word_count') or item.get('total_words', 0)
+                    if is_book:
+                        chapter_count = item.get('chapter_count', 0)
+                        ui.label(f"{chapter_count} chapters, {word_count} words").classes("text-xs text-gray-500")
+                    else:
+                        ui.label(f"{word_count} words").classes("text-xs text-gray-500")
 
                 # Audio status badge
                 if has_audio:
@@ -498,6 +509,143 @@ class ReadAloudApp:
             self.status_label.text = f"Generated {final_duration:.1f}s audio in {elapsed:.0f}s"
             self.status_label.classes(remove="text-gray-500", add="text-green-600")
 
+    def _build_clone_options(self) -> dict:
+        """Build clone voice dropdown options with transcript previews."""
+        options = {"None": "None"}
+        for name, data in CLONE_SAMPLES.items():
+            if data is None:
+                # Custom upload option
+                options["custom"] = "Custom - Upload..."
+            else:
+                # Load transcript preview from file
+                try:
+                    transcript_path = VOICE_SAMPLES_DIR / data["transcript"]
+                    transcript = transcript_path.read_text()
+                    preview = transcript[:35] + "..." if len(transcript) > 35 else transcript
+                    options[name] = f'{name} - "{preview}"'
+                except Exception:
+                    options[name] = name
+        return options
+
+    def on_stock_voice_change(self, e):
+        """Handle stock voice selection - clears clone voice if stock is selected."""
+        if e.value != "None":
+            self.clone_voice_select.value = "None"
+            # Clear clone state
+            self.clone_audio_path = None
+            self.clone_transcript = None
+
+    def on_clone_voice_change(self, e):
+        """Handle clone voice selection - clears stock voice and loads sample."""
+        if e.value != "None":
+            self.stock_voice_select.value = "None"
+            if e.value == "custom":
+                self._show_custom_upload_dialog()
+            else:
+                self._load_clone_sample(e.value)
+
+    def _load_clone_sample(self, sample_name: str):
+        """Load a preset clone sample's audio and transcript."""
+        if sample_name not in CLONE_SAMPLES or CLONE_SAMPLES[sample_name] is None:
+            return
+
+        data = CLONE_SAMPLES[sample_name]
+        audio_path = VOICE_SAMPLES_DIR / data["audio"]
+        transcript_path = VOICE_SAMPLES_DIR / data["transcript"]
+
+        if audio_path.exists() and transcript_path.exists():
+            self.clone_audio_path = str(audio_path)
+            self.clone_transcript = transcript_path.read_text()
+            ui.notify(f"Loaded voice sample: {sample_name}", type="positive")
+        else:
+            ui.notify(f"Sample files not found for {sample_name}", type="negative")
+            self.clone_voice_select.value = "None"
+
+    def _show_custom_upload_dialog(self):
+        """Show dialog for custom voice upload with audio file and transcript."""
+
+        async def handle_dialog():
+            result = {'audio': None, 'transcript': None}
+
+            with ui.dialog() as dialog, ui.card().classes("w-96"):
+                ui.label("Upload Custom Voice Sample").classes("text-lg font-bold")
+                ui.label("Provide 3-30 seconds of clean speech audio and its transcript.").classes(
+                    "text-sm text-gray-600 mt-1"
+                )
+
+                # Audio upload
+                audio_content = {'data': None, 'name': None}
+
+                async def on_audio_upload(e):
+                    audio_content['data'] = await e.file.read()
+                    audio_content['name'] = e.file.name
+                    ui.notify(f"Audio loaded: {e.file.name}", type="positive")
+
+                ui.label("Reference Audio").classes("mt-4 font-semibold")
+                ui.upload(
+                    label="Upload .wav or .mp3 (3-30 seconds)",
+                    auto_upload=True,
+                    max_files=1,
+                    on_upload=on_audio_upload,
+                ).classes("w-full").props('accept=".wav,.mp3"')
+
+                # Transcript input
+                ui.label("Transcript").classes("mt-4 font-semibold")
+                transcript_input = ui.textarea(
+                    label="Exact text spoken in the audio",
+                    placeholder="Enter the exact words spoken in the reference audio...",
+                ).classes("w-full").props("rows=3")
+
+                # Buttons
+                with ui.row().classes("w-full justify-end gap-2 mt-4"):
+                    def on_cancel():
+                        result['audio'] = None
+                        result['transcript'] = None
+                        dialog.close()
+
+                    def on_confirm():
+                        if audio_content['data'] is None:
+                            ui.notify("Please upload an audio file", type="warning")
+                            return
+                        if not transcript_input.value or not transcript_input.value.strip():
+                            ui.notify("Please enter the transcript", type="warning")
+                            return
+
+                        result['audio'] = audio_content
+                        result['transcript'] = transcript_input.value.strip()
+                        dialog.close()
+
+                    ui.button("Cancel", on_click=on_cancel).props("flat")
+                    ui.button("Use This Voice", on_click=on_confirm, color="primary")
+
+            dialog.open()
+            await dialog
+
+            return result
+
+        async def process_upload():
+            result = await handle_dialog()
+
+            if result['audio'] is not None and result['transcript'] is not None:
+                # Save audio to temp file
+                import tempfile
+                suffix = Path(result['audio']['name']).suffix
+                temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+                temp_file.write(result['audio']['data'])
+                temp_file.close()
+
+                self.clone_audio_path = temp_file.name
+                self.clone_transcript = result['transcript']
+                ui.notify("Custom voice sample ready", type="positive")
+            else:
+                # User cancelled - reset to None
+                self.clone_voice_select.value = "None"
+                self.clone_audio_path = None
+                self.clone_transcript = None
+
+        # Run the async dialog
+        asyncio.create_task(process_upload())
+
     def build_ui(self):
         """Build the main UI."""
         # Add screen recording JavaScript and hotkey handler
@@ -724,19 +872,21 @@ class ReadAloudApp:
                 # Voice selection row (hidden until item selected)
                 self.voice_row = ui.row().classes("w-full gap-4 hidden")
                 with self.voice_row:
-                    # Stock voice dropdown
+                    # Stock voice dropdown with "None" as first option
+                    stock_options = ["None"] + list(VOICES.keys())
                     self.stock_voice_select = ui.select(
                         label="Stock Voice",
-                        options=list(VOICES.keys()),
-                        value=list(VOICES.keys())[0],
+                        options=stock_options,
+                        value="Ryan (English Male)",
+                        on_change=self.on_stock_voice_change,
                     ).classes("flex-1")
 
-                    # Clone voice dropdown
+                    # Clone voice dropdown with transcript previews
                     self.clone_voice_select = ui.select(
                         label="Clone Voice",
-                        options=list(CLONE_SAMPLES.keys()),
-                        value=None,
-                        clearable=True,
+                        options=self._build_clone_options(),
+                        value="None",
+                        on_change=self.on_clone_voice_change,
                     ).classes("flex-1")
 
                 # Settings row (hidden until item selected)
