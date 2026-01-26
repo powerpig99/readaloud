@@ -1,7 +1,7 @@
 """
-ReadAloud v3 - NiceGUI Version
+ReadAloud v5 - NiceGUI Version
 Local TTS Reader with Library Management.
-Migrated from Gradio for better audio control and custom speed settings.
+Features: Auto-chunking, book/chapter support, voice cloning, unified generation interface.
 """
 
 from nicegui import ui, app, run
@@ -879,8 +879,9 @@ class ReadAloudApp:
         self.progress_text.text = "Loading model..."
         self.progress_time.text = f"0/{total_chunks} chunks"
 
-        # Start timer to poll progress
-        self.progress_timer = ui.timer(0.5, self.update_progress_ui)
+        # Activate the progress timer (created during build_ui)
+        if self.progress_timer:
+            self.progress_timer.activate()
 
     def update_progress_ui(self):
         """Update progress UI from shared state (called by timer)."""
@@ -904,9 +905,9 @@ class ReadAloudApp:
         """Hide progress card and stop timer."""
         self.progress_state.stop()
 
+        # Deactivate the progress timer (don't cancel, it's reused)
         if self.progress_timer:
-            self.progress_timer.cancel()
-            self.progress_timer = None
+            self.progress_timer.deactivate()
 
         self.progress_card.classes(add="hidden")
         self.status_label.classes(remove="hidden")
@@ -1201,7 +1202,7 @@ class ReadAloudApp:
 
         # Header
         with ui.column().classes("w-full max-w-4xl mx-auto p-4"):
-            ui.markdown("# ReadAloud v3").classes("text-3xl font-bold")
+            ui.markdown("# ReadAloud v5").classes("text-3xl font-bold")
             ui.label("Upload documents and generate audio.").classes("text-gray-600")
 
             ui.separator().classes("my-4")
@@ -1263,6 +1264,9 @@ class ReadAloudApp:
                         with ui.row().classes("w-full justify-between text-sm"):
                             self.progress_text = ui.label("Starting...").classes("text-gray-600")
                             self.progress_time = ui.label("").classes("text-gray-500")
+
+                # Create progress timer during build (inactive until generation starts)
+                self.progress_timer = ui.timer(0.5, self.update_progress_ui, active=False)
 
             ui.separator().classes("my-4")
 
@@ -1491,7 +1495,7 @@ def main_page():
 
 if __name__ in {"__main__", "__mp_main__"}:
     ui.run(
-        title="ReadAloud v3",
+        title="ReadAloud v5",
         host="127.0.0.1",
         port=8080,
         reload=False,
