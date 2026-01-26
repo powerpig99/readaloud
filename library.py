@@ -553,6 +553,50 @@ def save_chapter_audio(
     return True
 
 
+def save_chapter_timing(
+    book_id: str,
+    chapter_idx: int,
+    timing_data: Dict[str, Any],
+) -> bool:
+    """
+    Save timing data for a specific chapter.
+
+    Args:
+        book_id: The book ID
+        chapter_idx: Zero-based chapter index
+        timing_data: Timing data from alignment
+
+    Returns:
+        True if successful, False otherwise
+    """
+    item = get_item(book_id)
+    if item is None:
+        return False
+
+    # Check this is actually a book
+    is_book = item.get('type') == 'book' or item.get('source_type') == 'epub'
+    if not is_book:
+        return False
+
+    chapters = item.get('chapters', [])
+    if chapter_idx < 0 or chapter_idx >= len(chapters):
+        return False
+
+    # Create chapters audio directory if needed (timing goes alongside audio)
+    book_dir = _get_item_dir(book_id)
+    chapters_audio_dir = book_dir / "chapters_audio"
+    chapters_audio_dir.mkdir(exist_ok=True)
+
+    # Save timing file: 00-timing.json, 01-timing.json, etc.
+    timing_filename = f"{chapter_idx:02d}-timing.json"
+    timing_path = chapters_audio_dir / timing_filename
+
+    with open(timing_path, 'w', encoding='utf-8') as f:
+        json.dump(timing_data, f, indent=2, ensure_ascii=False)
+
+    return True
+
+
 def get_chapter_text(book_id: str, chapter_idx: int) -> Optional[str]:
     """
     Get the text content of a specific chapter.

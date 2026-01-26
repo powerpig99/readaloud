@@ -614,6 +614,22 @@ class ReadAloudApp:
             duration = get_audio_duration(temp_path)
             library.save_chapter_audio(book_id, chapter_idx, temp_path, duration)
 
+            # Track voice settings at book level (chapters share voice)
+            voice_settings = {
+                "voice": speaker if speaker else "clone",
+                "model_size": model_size,
+                "mode": "clone" if voice_prompt is not None else "preset",
+            }
+            library.update_item(book_id, {
+                "voice_settings": voice_settings,
+                "language": language,
+            })
+
+            # Create timing data for this chapter
+            sentences = get_sentences(text)
+            timing_data = create_simple_timing(sentences, duration)
+            library.save_chapter_timing(book_id, chapter_idx, timing_data)
+
             # Hide progress and show completion
             self.hide_progress(duration)
 
