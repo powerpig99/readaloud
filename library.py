@@ -483,6 +483,76 @@ def create_book(
     return metadata
 
 
+def save_chapter_audio(
+    book_id: str,
+    chapter_idx: int,
+    audio_path: str,
+    duration: float,
+) -> bool:
+    """
+    Save generated audio for a specific chapter.
+
+    Args:
+        book_id: The book ID
+        chapter_idx: Zero-based chapter index
+        audio_path: Path to the generated audio file
+        duration: Audio duration in seconds
+
+    Returns:
+        True if successful, False otherwise
+    """
+    item = get_item(book_id)
+    if item is None:
+        return False
+
+    # Check this is actually a book
+    is_book = item.get('type') == 'book' or item.get('source_type') == 'epub'
+    if not is_book:
+        return False
+
+    chapters = item.get('chapters', [])
+    if chapter_idx < 0 or chapter_idx >= len(chapters):
+        return False
+
+    # Create chapters audio directory if needed
+    book_dir = _get_item_dir(book_id)
+    chapters_audio_dir = book_dir / "chapters_audio"
+    chapters_audio_dir.mkdir(exist_ok=True)
+
+    # Generate filename: 00-chapter-title.wav
+    chapter = chapters[chapter_idx]
+    chapter_title = chapter.get('title', f'Chapter {chapter_idx + 1}')
+    # Sanitize title for filename
+    safe_title = "".join(c if c.isalnum() or c in ' -_' else '_' for c in chapter_title)[:50]
+    dest_filename = f"{chapter_idx:02d}-{safe_title}.wav"
+    dest_path = chapters_audio_dir / dest_filename
+
+    # Copy audio to library
+    shutil.copy2(audio_path, dest_path)
+
+    # Update chapter metadata with audio path
+    chapters[chapter_idx]['audio_path'] = str(dest_path)
+    chapters[chapter_idx]['audio_duration_seconds'] = duration
+
+    # Save updated metadata
+    meta_path = book_dir / "metadata.json"
+    with open(meta_path, 'w', encoding='utf-8') as f:
+        json.dump(item, f, indent=2, ensure_ascii=False)
+
+    # Check if all chapters have audio
+    all_have_audio = all(ch.get('audio_path') is not None for ch in chapters)
+
+    # Update index
+    index = _load_index()
+    for idx_item in index["items"]:
+        if idx_item["id"] == book_id:
+            idx_item["audio_generated"] = all_have_audio
+            break
+    _save_index(index)
+
+    return True
+
+
 def get_chapter_text(book_id: str, chapter_idx: int) -> Optional[str]:
     """
     Get the text content of a specific chapter.

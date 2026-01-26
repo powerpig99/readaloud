@@ -393,6 +393,247 @@ class ReadAloudApp:
         self._gen_item_id = item_id
         self._gen_chapter_idx = chapter_idx
 
+    async def on_generate_from_section(self):
+        """Generate audio for selected item/chapter from the Generate Audio section."""
+        if not hasattr(self, '_gen_item_id') or self._gen_item_id is None:
+            ui.notify("Select an item first", type="warning")
+            return
+
+        # Determine voice settings
+        voice_prompt = None
+        speaker = None
+
+        # Get model size
+        model_size = "0.6B" if "0.6B" in self.gen_model.value else "1.7B"
+
+        # Check if using clone voice
+        if self.clone_voice_select.value != "None":
+            # Voice cloning mode
+            if self.clone_voice_select.value == "custom":
+                # Custom upload - should already have clone_audio_path and clone_transcript
+                if not self.clone_audio_path:
+                    ui.notify("Upload reference audio for custom voice", type="warning")
+                    return
+                if not self.clone_transcript:
+                    ui.notify("Enter transcript for custom voice", type="warning")
+                    return
+            else:
+                # Preset clone sample - load if not already loaded
+                sample_name = self.clone_voice_select.value
+                if sample_name in CLONE_SAMPLES and CLONE_SAMPLES[sample_name] is not None:
+                    sample = CLONE_SAMPLES[sample_name]
+                    self.clone_audio_path = str(VOICE_SAMPLES_DIR / sample["audio"])
+                    self.clone_transcript = (VOICE_SAMPLES_DIR / sample["transcript"]).read_text()
+                else:
+                    ui.notify(f"Clone sample not found: {sample_name}", type="negative")
+                    return
+
+            # Create voice clone prompt
+            self.status_label.text = "Creating voice clone prompt..."
+            self.status_label.classes(remove="text-gray-500 text-green-600", add="text-blue-600")
+            await asyncio.sleep(0)  # Yield to UI
+
+            try:
+                voice_prompt = await run.io_bound(
+                    create_voice_clone_prompt,
+                    self.clone_audio_path,
+                    self.clone_transcript,
+                    model_size,
+                )
+            except Exception as e:
+                ui.notify(f"Failed to create voice clone prompt: {e}", type="negative")
+                self.reset_status()
+                return
+        else:
+            # Stock voice mode
+            if self.stock_voice_select.value == "None":
+                ui.notify("Select a voice (stock or clone)", type="warning")
+                return
+            speaker = VOICES.get(self.stock_voice_select.value, "ryan")
+
+        # Get language
+        language = self.gen_language.value.lower()
+
+        # Get the text to generate
+        if self._gen_chapter_idx is not None:
+            # Chapter generation
+            content = library.get_chapter_text(self._gen_item_id, self._gen_chapter_idx)
+            if content is None:
+                ui.notify("Chapter content not found", type="negative")
+                return
+            text = extract_text_from_markdown(content)
+            await self._generate_chapter_audio(
+                self._gen_item_id,
+                self._gen_chapter_idx,
+                text,
+                language,
+                model_size,
+                voice_prompt,
+                speaker,
+            )
+        else:
+            # Document generation
+            content = library.get_document_content(self._gen_item_id)
+            if content is None:
+                ui.notify("Document content not found", type="negative")
+                return
+            text = extract_text_from_markdown(content)
+            await self._generate_document_audio(
+                self._gen_item_id,
+                text,
+                language,
+                model_size,
+                voice_prompt,
+                speaker,
+            )
+
+    async def _generate_document_audio(
+        self,
+        item_id: str,
+        text: str,
+        language: str,
+        model_size: str,
+        voice_prompt,
+        speaker: str,
+    ):
+        """Generate audio for a document."""
+        try:
+            # Chunk text for TTS
+            chunks = chunk_text(text)
+            total_chunks = len(chunks)
+
+            # Show progress card
+            self.show_progress(total_chunks)
+            await asyncio.sleep(0)  # Yield to UI event loop
+
+            # Progress callback updates shared state (thread-safe)
+            def progress_callback(current, total):
+                self.progress_state.update(current, total)
+
+            # Run TTS in thread pool
+            wav, sr = await run.io_bound(
+                generate_long_text,
+                chunks,
+                language,
+                model_size,
+                voice_prompt,
+                speaker,
+                progress_callback,
+            )
+
+            # Save audio
+            temp_path = tempfile.mktemp(suffix=".wav")
+            save_audio(wav, sr, temp_path)
+
+            duration = get_audio_duration(temp_path)
+            library.save_audio(item_id, temp_path, duration)
+
+            # Track voice settings
+            voice_settings = {
+                "voice": speaker if speaker else "clone",
+                "model_size": model_size,
+                "mode": "clone" if voice_prompt is not None else "preset",
+            }
+            library.update_item(item_id, {
+                "voice_settings": voice_settings,
+                "language": language,
+            })
+
+            # Create timing data
+            sentences = get_sentences(text)
+            timing_data = create_simple_timing(sentences, duration)
+            library.save_timing(item_id, timing_data)
+
+            # Hide progress and show completion
+            self.hide_progress(duration)
+
+            # Refresh library and reload item
+            self.refresh_library()
+            self._on_card_click(item_id)
+
+            ui.notify(f"Audio generated: {duration:.1f}s", type="positive")
+
+            # Reset status after delay
+            ui.timer(5.0, lambda: self.reset_status(), once=True)
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            self.hide_progress()
+            self.status_label.text = f"Error: {str(e)}"
+            self.status_label.classes(remove="text-gray-500", add="text-red-600")
+            ui.notify(f"Error: {str(e)}", type="negative")
+
+    async def _generate_chapter_audio(
+        self,
+        book_id: str,
+        chapter_idx: int,
+        text: str,
+        language: str,
+        model_size: str,
+        voice_prompt,
+        speaker: str,
+    ):
+        """Generate audio for a book chapter."""
+        try:
+            # Get chapter title for notifications
+            book_meta = library.get_item(book_id)
+            chapter_title = "Chapter"
+            if book_meta and 'chapters' in book_meta:
+                chapters = book_meta['chapters']
+                if chapter_idx < len(chapters):
+                    chapter_title = chapters[chapter_idx].get('title', f'Chapter {chapter_idx + 1}')
+
+            # Chunk text for TTS
+            chunks = chunk_text(text)
+            total_chunks = len(chunks)
+
+            # Show progress card
+            self.show_progress(total_chunks)
+            await asyncio.sleep(0)  # Yield to UI event loop
+
+            # Progress callback updates shared state (thread-safe)
+            def progress_callback(current, total):
+                self.progress_state.update(current, total)
+
+            # Run TTS in thread pool
+            wav, sr = await run.io_bound(
+                generate_long_text,
+                chunks,
+                language,
+                model_size,
+                voice_prompt,
+                speaker,
+                progress_callback,
+            )
+
+            # Save audio
+            temp_path = tempfile.mktemp(suffix=".wav")
+            save_audio(wav, sr, temp_path)
+
+            duration = get_audio_duration(temp_path)
+            library.save_chapter_audio(book_id, chapter_idx, temp_path, duration)
+
+            # Hide progress and show completion
+            self.hide_progress(duration)
+
+            # Refresh library and reload chapter
+            self.refresh_library()
+            self.select_chapter(book_id, chapter_idx)
+
+            ui.notify(f"Chapter audio generated: {chapter_title} ({duration:.1f}s)", type="positive")
+
+            # Reset status after delay
+            ui.timer(5.0, lambda: self.reset_status(), once=True)
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            self.hide_progress()
+            self.status_label.text = f"Error: {str(e)}"
+            self.status_label.classes(remove="text-gray-500", add="text-red-600")
+            ui.notify(f"Error: {str(e)}", type="negative")
+
     def update_audio_player(self, audio_path: Optional[str]):
         """Update the audio player with native controls + extended speed buttons."""
         self.audio_container.clear()
@@ -1056,12 +1297,9 @@ class ReadAloudApp:
                     ).classes("flex-1")
 
                 # Generate button (hidden until item selected)
-                def on_generate_placeholder():
-                    ui.notify("Generate Audio clicked - handler will be implemented in Task 7", type="info")
-
                 self.gen_button = ui.button(
                     "Generate Audio",
-                    on_click=on_generate_placeholder,
+                    on_click=lambda: asyncio.create_task(self.on_generate_from_section()),
                     color="primary",
                     icon="audiotrack",
                 ).classes("w-full hidden")
