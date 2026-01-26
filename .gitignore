@@ -30,3 +30,4 @@ files/
 *.tmp
 *.temp
 *.log
+.worktrees/
