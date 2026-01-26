@@ -158,6 +158,17 @@ class ReadAloudApp:
         self.progress_text = None
         self.progress_timer = None
 
+        # Generate Audio section components
+        self.generation_container = None
+        self.gen_selected_label = None
+        self.voice_row = None
+        self.stock_voice_select = None
+        self.clone_voice_select = None
+        self.settings_row = None
+        self.gen_language = None
+        self.gen_model = None
+        self.gen_button = None
+
     def refresh_library(self):
         """Refresh library cards in the scrollable container."""
         items = library.get_all_items()
@@ -697,6 +708,62 @@ class ReadAloudApp:
                         with ui.row().classes("w-full justify-between text-sm"):
                             self.progress_text = ui.label("Starting...").classes("text-gray-600")
                             self.progress_time = ui.label("").classes("text-gray-500")
+
+            ui.separator().classes("my-4")
+
+            # Generate Audio section (fixed at bottom)
+            ui.markdown("### Generate Audio").classes("text-xl font-semibold")
+
+            self.generation_container = ui.column().classes("w-full gap-4 p-4 border rounded")
+            with self.generation_container:
+                # Selected item label (shown when no item selected)
+                self.gen_selected_label = ui.label(
+                    "Select an item from the library"
+                ).classes("text-gray-500 italic")
+
+                # Voice selection row (hidden until item selected)
+                self.voice_row = ui.row().classes("w-full gap-4 hidden")
+                with self.voice_row:
+                    # Stock voice dropdown
+                    self.stock_voice_select = ui.select(
+                        label="Stock Voice",
+                        options=list(VOICES.keys()),
+                        value=list(VOICES.keys())[0],
+                    ).classes("flex-1")
+
+                    # Clone voice dropdown
+                    self.clone_voice_select = ui.select(
+                        label="Clone Voice",
+                        options=list(CLONE_SAMPLES.keys()),
+                        value=None,
+                        clearable=True,
+                    ).classes("flex-1")
+
+                # Settings row (hidden until item selected)
+                self.settings_row = ui.row().classes("w-full gap-4 hidden")
+                with self.settings_row:
+                    self.gen_language = ui.select(
+                        label="Language",
+                        options=LANGUAGES,
+                        value="English",
+                    ).classes("flex-1")
+
+                    self.gen_model = ui.select(
+                        label="Model",
+                        options=["0.6B (faster)", "1.7B (better)"],
+                        value="0.6B (faster)",
+                    ).classes("flex-1")
+
+                # Generate button (hidden until item selected)
+                def on_generate_placeholder():
+                    ui.notify("Generate Audio clicked - handler will be implemented in Task 7", type="info")
+
+                self.gen_button = ui.button(
+                    "Generate Audio",
+                    on_click=on_generate_placeholder,
+                    color="primary",
+                    icon="audiotrack",
+                ).classes("w-full hidden")
 
             ui.separator().classes("my-4")
 
