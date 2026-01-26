@@ -4,7 +4,7 @@ Local TTS Reader with Library Management.
 Features: Auto-chunking, book/chapter support, voice cloning, unified generation interface.
 """
 
-from nicegui import ui, app, run
+from nicegui import ui, app, run, context
 import asyncio
 import tempfile
 import time
@@ -398,6 +398,9 @@ class ReadAloudApp:
             ui.notify("Select an item first", type="warning")
             return
 
+        # Capture client context before any background tasks
+        client = context.client
+
         # Determine voice settings
         voice_prompt = None
         speaker = None
@@ -440,8 +443,9 @@ class ReadAloudApp:
                     model_size,
                 )
             except Exception as e:
-                ui.notify(f"Failed to create voice clone prompt: {e}", type="negative")
-                self.reset_status()
+                with client:
+                    ui.notify(f"Failed to create voice clone prompt: {e}", type="negative")
+                    self.reset_status()
                 return
         else:
             # Stock voice mode
@@ -496,6 +500,9 @@ class ReadAloudApp:
         speaker: str,
     ):
         """Generate audio for a document."""
+        # Capture client context before background task (needed for UI ops after)
+        client = context.client
+
         try:
             # Chunk text for TTS
             chunks = chunk_text(text)
@@ -543,25 +550,28 @@ class ReadAloudApp:
             timing_data = create_simple_timing(sentences, duration)
             library.save_timing(item_id, timing_data)
 
-            # Hide progress and show completion
-            self.hide_progress(duration)
+            # Re-enter client context for UI operations after background task
+            with client:
+                # Hide progress and show completion
+                self.hide_progress(duration)
 
-            # Refresh library and reload item
-            self.refresh_library()
-            self._on_card_click(item_id)
+                # Refresh library and reload item
+                self.refresh_library()
+                self._on_card_click(item_id)
 
-            ui.notify(f"Audio generated: {duration:.1f}s", type="positive")
+                ui.notify(f"Audio generated: {duration:.1f}s", type="positive")
 
-            # Reset status after delay
-            ui.timer(5.0, lambda: self.reset_status(), once=True)
+                # Reset status after delay
+                ui.timer(5.0, lambda: self.reset_status(), once=True)
 
         except Exception as e:
             import traceback
             traceback.print_exc()
-            self.hide_progress()
-            self.status_label.text = f"Error: {str(e)}"
-            self.status_label.classes(remove="text-gray-500", add="text-red-600")
-            ui.notify(f"Error: {str(e)}", type="negative")
+            with client:
+                self.hide_progress()
+                self.status_label.text = f"Error: {str(e)}"
+                self.status_label.classes(remove="text-gray-500", add="text-red-600")
+                ui.notify(f"Error: {str(e)}", type="negative")
 
     async def _generate_chapter_audio(
         self,
@@ -574,6 +584,9 @@ class ReadAloudApp:
         speaker: str,
     ):
         """Generate audio for a book chapter."""
+        # Capture client context before background task (needed for UI ops after)
+        client = context.client
+
         try:
             # Get chapter title for notifications
             book_meta = library.get_item(book_id)
@@ -629,25 +642,28 @@ class ReadAloudApp:
             timing_data = create_simple_timing(sentences, duration)
             library.save_chapter_timing(book_id, chapter_idx, timing_data)
 
-            # Hide progress and show completion
-            self.hide_progress(duration)
+            # Re-enter client context for UI operations after background task
+            with client:
+                # Hide progress and show completion
+                self.hide_progress(duration)
 
-            # Refresh library and reload chapter
-            self.refresh_library()
-            self.select_chapter(book_id, chapter_idx)
+                # Refresh library and reload chapter
+                self.refresh_library()
+                self.select_chapter(book_id, chapter_idx)
 
-            ui.notify(f"Chapter audio generated: {chapter_title} ({duration:.1f}s)", type="positive")
+                ui.notify(f"Chapter audio generated: {chapter_title} ({duration:.1f}s)", type="positive")
 
-            # Reset status after delay
-            ui.timer(5.0, lambda: self.reset_status(), once=True)
+                # Reset status after delay
+                ui.timer(5.0, lambda: self.reset_status(), once=True)
 
         except Exception as e:
             import traceback
             traceback.print_exc()
-            self.hide_progress()
-            self.status_label.text = f"Error: {str(e)}"
-            self.status_label.classes(remove="text-gray-500", add="text-red-600")
-            ui.notify(f"Error: {str(e)}", type="negative")
+            with client:
+                self.hide_progress()
+                self.status_label.text = f"Error: {str(e)}"
+                self.status_label.classes(remove="text-gray-500", add="text-red-600")
+                ui.notify(f"Error: {str(e)}", type="negative")
 
     def update_audio_player(self, audio_path: Optional[str]):
         """Update the audio player with native controls + extended speed buttons."""
@@ -1316,9 +1332,10 @@ class ReadAloudApp:
                     ).classes("flex-1")
 
                 # Generate button (hidden until item selected)
+                # Note: Pass async function directly to on_click - NiceGUI handles it properly
                 self.gen_button = ui.button(
                     "Generate Audio",
-                    on_click=lambda: asyncio.create_task(self.on_generate_from_section()),
+                    on_click=self.on_generate_from_section,
                     color="primary",
                     icon="audiotrack",
                 ).classes("w-full hidden")
