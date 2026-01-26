@@ -487,23 +487,45 @@ def get_chapter_text(book_id: str, chapter_idx: int) -> Optional[str]:
     """
     Get the text content of a specific chapter.
 
+    Handles two storage formats:
+    1. Content stored in metadata (from create_book())
+    2. Content stored as separate .md files in chapters/ dir (from EPUB import)
+
     Args:
         book_id: The book ID
         chapter_idx: Zero-based chapter index
 
     Returns:
-        Chapter content as plain text, or None if not found
+        Chapter content as markdown text, or None if not found
     """
     item = get_item(book_id)
     if item is None:
         return None
 
-    # Check this is actually a book
-    if item.get('type') != 'book':
+    # Check this is actually a book (type='book' from create_book, or source_type='epub' from EPUB import)
+    is_book = item.get('type') == 'book' or item.get('source_type') == 'epub'
+    if not is_book:
         return None
 
     chapters = item.get('chapters', [])
     if chapter_idx < 0 or chapter_idx >= len(chapters):
         return None
 
-    return chapters[chapter_idx].get('content')
+    chapter = chapters[chapter_idx]
+
+    # Method 1: Content stored directly in metadata
+    if chapter.get('content'):
+        return chapter['content']
+
+    # Method 2: Content stored as separate file in chapters/ directory
+    book_dir = _get_item_dir(book_id)
+    chapters_dir = book_dir / "chapters"
+
+    if chapters_dir.exists():
+        # Look for chapter file by index prefix (e.g., "00-*.md", "01-*.md")
+        prefix = f"{chapter_idx:02d}-"
+        for file_path in chapters_dir.glob(f"{prefix}*.md"):
+            with open(file_path, 'r', encoding='utf-8') as f:
+                return f.read()
+
+    return None

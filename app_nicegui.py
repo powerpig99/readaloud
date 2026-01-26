@@ -141,6 +141,7 @@ class ReadAloudApp:
 
     def __init__(self):
         self.current_item_id: Optional[str] = None
+        self.current_chapter_idx: Optional[int] = None  # For books: which chapter is selected
         self.current_audio_path: Optional[str] = None
 
         # UI components (will be set in build_ui)
@@ -193,6 +194,7 @@ class ReadAloudApp:
         # If current item was deleted, clear selection
         if self.current_item_id and self.current_item_id not in self.library_cards:
             self.current_item_id = None
+            self.current_chapter_idx = None
             self.current_audio_path = None
             self.text_preview.value = ""
             self.update_audio_player(None)
@@ -201,34 +203,112 @@ class ReadAloudApp:
             self._highlight_card(self.current_item_id)
 
     def _create_library_card(self, item: dict):
-        """Create a clickable card for a library item."""
+        """Create a clickable card for a library item (or expandable card for books)."""
         item_id = item['id']
         has_audio = item.get('audio_generated', False)
-        is_book = item.get('type') == 'book'
+        # Check for both type='book' (from create_book) and source_type='epub' (from EPUB import)
+        is_book = item.get('type') == 'book' or item.get('source_type') == 'epub'
 
-        card = ui.card().classes(
-            "w-full cursor-pointer hover:bg-blue-50 transition-colors p-3"
-        ).on('click', lambda i=item_id: self._on_card_click(i))
+        if is_book:
+            # Get full book metadata with chapters
+            book_meta = library.get_item(item_id)
+            chapters = book_meta.get('chapters', []) if book_meta else []
+            word_count = item.get('total_words', 0)
+            chapter_count = item.get('chapter_count', 0)
 
-        with card:
-            with ui.row().classes("w-full items-center justify-between"):
-                with ui.column().classes("gap-0"):
-                    ui.label(item['title']).classes("font-semibold text-sm truncate max-w-xs")
-                    # Handle both documents (word_count) and books (total_words)
-                    word_count = item.get('word_count') or item.get('total_words', 0)
-                    if is_book:
-                        chapter_count = item.get('chapter_count', 0)
-                        ui.label(f"{chapter_count} chapters, {word_count} words").classes("text-xs text-gray-500")
-                    else:
+            # Create expandable card for books
+            with ui.expansion(
+                f"{item['title']}",
+                icon="menu_book"
+            ).classes("w-full") as expansion:
+                # Summary line
+                ui.label(f"{chapter_count} chapters | {word_count:,} words").classes(
+                    "text-xs text-gray-500 mb-2"
+                )
+
+                # Chapter list
+                for idx, ch in enumerate(chapters):
+                    self._create_chapter_row(item_id, idx, ch)
+
+            self.library_cards[item_id] = expansion
+        else:
+            # Standard card for documents
+            card = ui.card().classes(
+                "w-full cursor-pointer hover:bg-blue-50 transition-colors p-3"
+            ).on('click', lambda i=item_id: self._on_card_click(i))
+
+            with card:
+                with ui.row().classes("w-full items-center justify-between"):
+                    with ui.column().classes("gap-0"):
+                        ui.label(item['title']).classes("font-semibold text-sm truncate max-w-xs")
+                        word_count = item.get('word_count', 0)
                         ui.label(f"{word_count} words").classes("text-xs text-gray-500")
 
-                # Audio status badge
-                if has_audio:
-                    ui.badge("Audio", color="green").props("outline")
-                else:
-                    ui.badge("No Audio", color="grey").props("outline")
+                    # Audio status badge
+                    if has_audio:
+                        ui.badge("Audio", color="green").props("outline")
+                    else:
+                        ui.badge("No Audio", color="grey").props("outline")
 
-        self.library_cards[item_id] = card
+            self.library_cards[item_id] = card
+
+    def _create_chapter_row(self, book_id: str, chapter_idx: int, chapter: dict):
+        """Create a clickable row for a chapter within a book."""
+        has_audio = chapter.get('audio_path') is not None
+        chapter_title = chapter.get('title', f'Chapter {chapter_idx + 1}')
+        word_count = chapter.get('word_count', 0)
+
+        with ui.row().classes(
+            "w-full p-2 hover:bg-blue-50 cursor-pointer rounded items-center justify-between"
+        ).on('click', lambda b=book_id, idx=chapter_idx: self.select_chapter(b, idx)):
+            with ui.column().classes("gap-0 flex-1"):
+                ui.label(f"{chapter_idx + 1}. {chapter_title[:40]}").classes("text-sm")
+                ui.label(f"{word_count:,} words").classes("text-xs text-gray-400")
+
+            if has_audio:
+                ui.badge("Audio", color="green").props("outline size=sm")
+            else:
+                ui.badge("No Audio", color="grey").props("outline size=sm")
+
+    def select_chapter(self, book_id: str, chapter_idx: int):
+        """Select and load a specific chapter from a book."""
+        try:
+            # Get chapter text
+            content = library.get_chapter_text(book_id, chapter_idx)
+            if content is None:
+                ui.notify("Chapter not found", type="warning")
+                return
+
+            # Extract plain text from markdown
+            text = extract_text_from_markdown(content)
+            self.text_preview.value = text
+
+            # Update selection state
+            self.current_item_id = book_id
+            self.current_chapter_idx = chapter_idx
+
+            # Get book metadata to check for chapter audio
+            book_meta = library.get_item(book_id)
+            if book_meta:
+                chapters = book_meta.get('chapters', [])
+                if chapter_idx < len(chapters):
+                    audio_path = chapters[chapter_idx].get('audio_path')
+                    if audio_path and Path(audio_path).exists():
+                        self.current_audio_path = audio_path
+                        self.update_audio_player(audio_path)
+                    else:
+                        self.current_audio_path = None
+                        self.update_audio_player(None)
+
+            # Highlight the book in library (expansion doesn't need highlight like cards)
+            self._highlight_card(book_id)
+
+            # Show chapter info in status
+            chapter_title = book_meta['chapters'][chapter_idx].get('title', f'Chapter {chapter_idx + 1}') if book_meta else f'Chapter {chapter_idx + 1}'
+            ui.notify(f"Selected: {chapter_title}", type="info")
+
+        except Exception as e:
+            ui.notify(f"Error loading chapter: {str(e)}", type="negative")
 
     def _on_card_click(self, item_id: str):
         """Handle library card click."""
@@ -236,15 +316,17 @@ class ReadAloudApp:
         self.select_item(item_id)
 
     def _highlight_card(self, item_id: str):
-        """Highlight the selected card and unhighlight others."""
-        for card_id, card in self.library_cards.items():
+        """Highlight the selected card/expansion and unhighlight others."""
+        for card_id, element in self.library_cards.items():
             if card_id == item_id:
-                card.classes(remove="hover:bg-blue-50", add="bg-blue-100 ring-2 ring-blue-400")
+                # Add highlight - works for both cards and expansions
+                element.classes(remove="hover:bg-blue-50", add="bg-blue-100 ring-2 ring-blue-400")
             else:
-                card.classes(remove="bg-blue-100 ring-2 ring-blue-400", add="hover:bg-blue-50")
+                # Remove highlight
+                element.classes(remove="bg-blue-100 ring-2 ring-blue-400", add="hover:bg-blue-50")
 
     def select_item(self, item_id: str):
-        """Load a library item."""
+        """Load a library item (document, not book chapter)."""
         if not item_id:
             return
 
@@ -258,6 +340,7 @@ class ReadAloudApp:
             self.text_preview.value = text
 
             self.current_item_id = item_id
+            self.current_chapter_idx = None  # Reset chapter selection (this is a document, not a book chapter)
 
             if library.has_audio(item_id):
                 audio_path = str(library.get_audio_path(item_id))
@@ -280,13 +363,41 @@ class ReadAloudApp:
                 # Create unique element ID for this audio
                 audio_id = f"audio-{id(self)}"
 
-                # Get item_id from path (library/{item_id}/audio.wav)
-                item_id = Path(audio_path).parent.name
+                # Build audio URL from path
+                # Path could be: library/{item_id}/audio.wav (document)
+                # Or: library/{item_id}/chapters/00-CHAPTER.m4a (book chapter)
+                audio_path_obj = Path(audio_path)
+                library_dir = Path(__file__).parent / "library"
+
+                try:
+                    # Get relative path from library directory
+                    rel_path = audio_path_obj.relative_to(library_dir)
+                    audio_url = f"/audio/{rel_path}"
+                except ValueError:
+                    # Path is not under library dir (e.g., absolute path from worktree)
+                    # Try to extract the relative portion after "library/"
+                    path_str = str(audio_path_obj)
+                    if "/library/" in path_str:
+                        rel_path = path_str.split("/library/", 1)[1]
+                        audio_url = f"/audio/{rel_path}"
+                    else:
+                        # Fallback: use filename only (may not work)
+                        audio_url = f"/audio/{audio_path_obj.name}"
+
+                # Determine MIME type from extension
+                ext = audio_path_obj.suffix.lower()
+                mime_types = {
+                    '.wav': 'audio/wav',
+                    '.mp3': 'audio/mpeg',
+                    '.m4a': 'audio/mp4',
+                    '.ogg': 'audio/ogg',
+                }
+                mime_type = mime_types.get(ext, 'audio/wav')
 
                 # Native HTML5 audio player (noplaybackrate hides native speed menu)
                 ui.html(f'''
                     <audio id="{audio_id}" controls controlsList="noplaybackrate" style="width: 100%;">
-                        <source src="/audio/{item_id}/audio.wav" type="audio/wav">
+                        <source src="{audio_url}" type="{mime_type}">
                         Your browser does not support the audio element.
                     </audio>
                 ''', sanitize=False).classes('w-full')
@@ -1039,20 +1150,37 @@ class ReadAloudApp:
 
 
 # Serve audio files from the library directory
-@app.get('/audio/{item_id}/{filename}')
-async def serve_audio(item_id: str, filename: str):
-    """Serve audio files from library."""
+# Use path:file_path to capture paths with subdirectories (e.g., {item_id}/chapters/{filename})
+@app.get('/audio/{file_path:path}')
+async def serve_audio(file_path: str):
+    """Serve audio files from library. Handles both document and chapter audio."""
     from fastapi.responses import FileResponse
     from fastapi import HTTPException
 
     library_dir = Path(__file__).parent / "library"
-    audio_path = library_dir / item_id / filename
+    audio_path = library_dir / file_path
+
+    # Security: ensure path doesn't escape library directory
+    try:
+        audio_path.resolve().relative_to(library_dir.resolve())
+    except ValueError:
+        raise HTTPException(status_code=403, detail="Access denied")
 
     if audio_path.exists():
+        # Determine MIME type from extension
+        ext = audio_path.suffix.lower()
+        mime_types = {
+            '.wav': 'audio/wav',
+            '.mp3': 'audio/mpeg',
+            '.m4a': 'audio/mp4',
+            '.ogg': 'audio/ogg',
+        }
+        mime_type = mime_types.get(ext, 'audio/octet-stream')
+
         return FileResponse(
             audio_path,
-            media_type="audio/wav",
-            filename=filename,
+            media_type=mime_type,
+            filename=audio_path.name,
         )
 
     raise HTTPException(status_code=404, detail="Audio file not found")
