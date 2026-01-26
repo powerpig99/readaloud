@@ -174,6 +174,10 @@ class ReadAloudApp:
         self.clone_audio_path: Optional[str] = None
         self.clone_transcript: Optional[str] = None
 
+        # Generation section state (tracks what's selected for audio generation)
+        self._gen_item_id: Optional[str] = None
+        self._gen_chapter_idx: Optional[int] = None
+
     def refresh_library(self):
         """Refresh library cards in the scrollable container."""
         items = library.get_all_items()
@@ -303,6 +307,9 @@ class ReadAloudApp:
             # Highlight the book in library (expansion doesn't need highlight like cards)
             self._highlight_card(book_id)
 
+            # Update generation section for this chapter
+            self.update_generation_section(book_id, chapter_idx)
+
             # Show chapter info in status
             chapter_title = book_meta['chapters'][chapter_idx].get('title', f'Chapter {chapter_idx + 1}') if book_meta else f'Chapter {chapter_idx + 1}'
             ui.notify(f"Selected: {chapter_title}", type="info")
@@ -350,8 +357,41 @@ class ReadAloudApp:
                 self.current_audio_path = None
                 self.update_audio_player(None)
 
+            # Update generation section for this document
+            self.update_generation_section(item_id)
+
         except Exception as e:
             ui.notify(f"Error loading: {str(e)}", type="negative")
+
+    def update_generation_section(self, item_id: str, chapter_idx: int = None):
+        """Update generation section for selected item or chapter."""
+        item = library.get_item(item_id)
+        if item is None:
+            return
+
+        if 'chapters' in item and chapter_idx is not None:
+            # Book chapter selected
+            chapter = item['chapters'][chapter_idx]
+            chapter_title = chapter.get('title', f'Chapter {chapter_idx + 1}')
+            title = f"{item['title']} - Ch. {chapter_idx + 1}: {chapter_title}"
+            has_audio = chapter.get('audio_path') is not None
+        else:
+            # Document selected
+            title = item['title']
+            has_audio = library.has_audio(item_id)
+
+        # Update UI
+        self.gen_selected_label.text = f"Selected: {title}"
+        self.voice_row.classes(remove="hidden")
+        self.settings_row.classes(remove="hidden")
+        self.gen_button.classes(remove="hidden")
+
+        # Change button text based on whether audio exists
+        self.gen_button.text = "Regenerate Audio" if has_audio else "Generate Audio"
+
+        # Store selection for generation
+        self._gen_item_id = item_id
+        self._gen_chapter_idx = chapter_idx
 
     def update_audio_player(self, audio_path: Optional[str]):
         """Update the audio player with native controls + extended speed buttons."""
