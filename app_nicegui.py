@@ -1230,8 +1230,8 @@ class ReadAloudApp:
                     ui.button("Refresh", on_click=self.refresh_library, icon="refresh").props("flat dense")
                     ui.button("Delete", on_click=self.delete_item, icon="delete", color="red").props("flat dense")
 
-            # Scrollable library card container
-            self.library_scroll = ui.scroll_area().classes("w-full border rounded").style("height: 300px")
+            # Scrollable library card container (resizable, no max height)
+            self.library_scroll = ui.scroll_area().classes("w-full border rounded").style("height: 600px; resize: vertical; overflow: auto")
             with self.library_scroll:
                 self.library_container = ui.column().classes("w-full gap-1 p-1")
 
@@ -1328,7 +1328,7 @@ class ReadAloudApp:
                     self.gen_model = ui.select(
                         label="Model",
                         options=["0.6B (faster)", "1.7B (better)"],
-                        value="0.6B (faster)",
+                        value="1.7B (better)",
                     ).classes("flex-1")
 
                 # Generate button (hidden until item selected)
