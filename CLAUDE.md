@@ -14,6 +14,8 @@ ReadAloud v5.1 is a local-first text-to-speech web application with library mana
 - V5.1 (Polish): +2 hours — EPUB support, duration estimation, UI refinements
 - Total: ~20-22 hours using AI-augmented development
 
+**Note:** No need to continue tracking development time. The initial estimates were sufficient to demonstrate the speed of AI-augmented development.
+
 **Tested on:** MacBook Pro M4 with 48GB RAM
 
 **Current Status**: Two UI options available - Gradio (legacy) and NiceGUI (recommended, v5.1.0 with EPUB support and streamlined interface).

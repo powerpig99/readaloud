@@ -237,7 +237,7 @@ This project was built using AI-augmented development with Claude:
 - **V5 (Unified UI)**: +4 hours — book support, chapter generation, streamlined interface
 - **V5.1 (Polish)**: +2 hours — EPUB support, duration estimation, UI refinements
 
-Total development time: ~20-22 hours for a full-featured local TTS application with voice cloning and EPUB support.
+Total development time: ~20-22 hours for a full-featured local TTS application with voice cloning and EPUB support. *(No further time tracking—the point is made.)*
 
 **Tested on**: MacBook Pro M4 with 48GB RAM. Performance will vary on other hardware.
 
