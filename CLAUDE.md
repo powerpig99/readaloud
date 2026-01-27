@@ -4,18 +4,19 @@ This file provides guidance to Claude Code when working with this repository. It
 
 ## Project Overview
 
-ReadAloud v5 is a local-first text-to-speech web application with library management.
+ReadAloud v5.1 is a local-first text-to-speech web application with library management.
 
 **Development Timeline:**
 - V2 (Gradio MVP): 7 hours
 - V3 (NiceGUI): +5-7 hours
 - V4 (Voice cloning): +2 hours
 - V5 (Unified UI): +4 hours
-- Total: ~18-20 hours using AI-augmented development
+- V5.1 (Polish): +2 hours — EPUB support, duration estimation, UI refinements
+- Total: ~20-22 hours using AI-augmented development
 
 **Tested on:** MacBook Pro M4 with 48GB RAM
 
-**Current Status**: Two UI options available - Gradio (legacy) and NiceGUI (recommended, v5.0.0 with unified generation interface).
+**Current Status**: Two UI options available - Gradio (legacy) and NiceGUI (recommended, v5.1.0 with EPUB support and streamlined interface).
 
 ## UI Options
 
@@ -34,10 +35,14 @@ ReadAloud v5 is a local-first text-to-speech web application with library manage
 | Feature | Gradio | NiceGUI | Notes |
 |---------|--------|---------|-------|
 | Document library | ✅ | ✅ | Persistent storage in `library/` directory |
-| Upload .md/.txt | ✅ | ✅ | Files stored with metadata |
+| Upload .md/.txt/.epub | ✅ | ✅ | Files stored with metadata |
+| **EPUB support** | ❌ | ✅ | Import EPUB books with automatic chapter extraction (V5.1) |
 | Title auto-prefill | ❌ | ✅ | Extracts from `#` headers or uses filename |
 | Duplicate detection | ❌ | ✅ | SHA-256 hash check with replace/cancel dialog |
 | Scrollable library | ❌ | ✅ | Card-based with selection highlighting |
+| **Collapsible sections** | ❌ | ✅ | Library and Generate Audio collapse for cleaner interface (V5.1) |
+| **Per-item delete** | ❌ | ✅ | Delete button on each item with confirmation dialog (V5.1) |
+| **Duration estimation** | ❌ | ✅ | Shows ~X min before generation, actual after (V5.1) |
 | **Auto-chunking** | ❌ | ✅ | Long docs (5000+ words, 2+ headings) → books with chapters (V5) |
 | **Book/chapter support** | ❌ | ✅ | Expandable cards, chapter-level generation (V5) |
 | **Unified generation** | ❌ | ✅ | Fixed bottom section, separated upload from generation (V5) |
@@ -136,6 +141,10 @@ pkill -f "python app"; lsof -ti:7860 -ti:8080 | xargs kill -9
 | Text chunking (CJK) | `text_processor.py:chunk_text()` | Same |
 | Content hashing | `library.py:compute_content_hash()` | Same |
 | **Book operations** | `library.py:create_book(), get_chapter_text()` | N/A |
+| **EPUB parsing** | `app_nicegui.py:parse_epub_content()` | N/A |
+| **Duration estimation** | `app_nicegui.py:estimate_audio_duration()` | N/A |
+| **Upload dialog** | `app_nicegui.py:_show_add_to_library_dialog()` | N/A |
+| **Per-item delete** | `app_nicegui.py:_delete_single_item()` | N/A |
 | Library operations | `library.py` | Same |
 
 ## Data Flow
@@ -180,6 +189,11 @@ pkill -f "python app"; lsof -ti:7860 -ti:8080 | xargs kill -9
 | Scrollable library | ✅ Done | Card-based library view with selection highlighting |
 | Screen recording | ✅ Done | Press 'D' key to toggle (debug feature for X feedback) |
 | Voice cloning | ✅ Done (V4) | Upload 3-30s reference audio + transcript to clone any voice |
+| EPUB support | ✅ Done (V5.1) | Import EPUB books with automatic chapter extraction |
+| Duration estimation | ✅ Done (V5.1) | Shows estimated duration before, actual after generation |
+| Collapsible UI | ✅ Done (V5.1) | Library and Generate Audio sections are collapsible |
+| Per-item delete | ✅ Done (V5.1) | Delete button on each item with confirmation dialog |
+| Popup upload | ✅ Done (V5.1) | "Add to Library" button opens popup dialog |
 | Karaoke highlighting | ❌ Not started | Timing data saved, JS exists in `static/`, needs integration |
 | WhisperX alignment | ❌ Not started | Code exists in `alignment.py`, using simple estimation |
 | PDF support | ❌ Not started | |
@@ -208,15 +222,19 @@ This project uses NiceGUI. The Nice Vibes MCP server is configured for enhanced 
 When resuming work:
 1. Run `source venv/bin/activate && python app_nicegui.py`
 2. Check http://127.0.0.1:8080 loads correctly, title shows "ReadAloud v5"
-3. Test: Upload a file → verify title prefills from `#` header
-4. Test: Upload same file again → verify duplicate dialog appears
-5. Test: Upload long document (5000+ words with headings) → should create book with chapters
-6. Test: Click book → expands to show chapters → click chapter → loads in reader
-7. Test: Select item → Generation section shows item name and Generate button
-8. Test: Generate audio with Stock Voice → verify progress indicator shows chunk count
-9. Test: Generate audio with Clone Voice → verify no slot stack error
-10. Test: Speed control buttons (should support 0.5x-3x)
-11. Test: Press 'D' key (not in input field) → select current tab → recording indicator → press 'D' again or click "Stop sharing" → file downloads
+3. Test: Click "+ Add to Library" button → popup dialog opens
+4. Test: Upload a .md file → verify title prefills from `#` header
+5. Test: Upload an .epub file → should create book with chapters, word counts shown
+6. Test: Upload same file again → verify duplicate dialog appears
+7. Test: Upload long document (5000+ words with headings) → should create book with chapters
+8. Test: Click book → expands to show chapters → click chapter → loads in reader
+9. Test: Select item → Generation section shows item name, duration estimate, and Generate button
+10. Test: Generate audio with Stock Voice → verify progress indicator shows chunk count
+11. Test: Generate audio with Clone Voice → verify no slot stack error
+12. Test: Speed control buttons (should support 0.5x-3x)
+13. Test: Delete button on item → confirmation dialog → deletes item
+14. Test: Collapse/expand Library and Generate Audio sections
+15. Test: Press 'D' key (not in input field) → select current tab → recording indicator → press 'D' again or click "Stop sharing" → file downloads
 
 ## Screen Recording Implementation Notes
 

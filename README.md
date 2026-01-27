@@ -4,11 +4,11 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![NiceGUI](https://img.shields.io/badge/UI-NiceGUI-green.svg)](https://nicegui.io/)
 [![Local First](https://img.shields.io/badge/Local-First-purple.svg)](#)
-[![Version](https://img.shields.io/badge/version-5.0.0-brightgreen.svg)](https://github.com/powerpig99/readaloud/releases)
+[![Version](https://img.shields.io/badge/version-5.1.0-brightgreen.svg)](https://github.com/powerpig99/readaloud/releases)
 
 **Local-first text-to-speech reader powered by Qwen3-TTS.**
 
-Upload markdown or text files, choose from 9 natural voices or clone any voice, and listen at your preferred speed. Everything runs locally—no cloud, no accounts.
+Upload markdown, text, or EPUB files, choose from 9 natural voices or clone any voice, and listen at your preferred speed. Everything runs locally—no cloud, no accounts.
 
 ![ReadAloud Screenshot](screenshot.png)
 
@@ -47,7 +47,14 @@ This project is what happens when personal resonance meets technical timing.
 - **Model Choice** — 0.6B (fast) or 1.7B (higher quality)
 - **Fully Local** — No cloud, no accounts, your data stays on your machine
 
-### V5: Unified Generation Interface (Latest)
+### V5.1: Streamlined Interface (Latest)
+- **EPUB Support** — Import EPUB books with automatic chapter extraction
+- **Duration Estimation** — Shows estimated audio length before generation, actual duration after
+- **Collapsible Sections** — Library and Generate Audio sections collapse for cleaner interface
+- **Per-Item Delete** — Delete individual items with confirmation dialog
+- **Popup Upload** — Simplified "Add to Library" button opens popup dialog
+
+### V5.0: Unified Generation Interface
 - **Auto-Chunking** — Long documents (5000+ words with headings) automatically split into chapters
 - **Book Support** — Expandable cards show chapters with individual audio status
 - **Chapter Generation** — Generate audio for specific chapters, not just whole documents
@@ -100,11 +107,11 @@ Open http://127.0.0.1:8080 in your browser.
 
 ### Adding Documents
 
-1. Expand the **Add to Library** section
-2. Upload a `.md` or `.txt` file (title auto-fills from content)
-3. Click **Add to Library**
+1. Click **+ Add to Library** button in the Library header
+2. Upload a `.md`, `.txt`, or `.epub` file (title auto-fills from content)
+3. Click **Add to Library** in the popup dialog
 
-Long documents with chapter headings are automatically detected and split into books.
+Long documents with chapter headings and EPUB files are automatically split into books with chapters.
 
 ### Generating Audio
 
@@ -141,6 +148,7 @@ Preset clone samples included: Elon Musk, Jensen Huang, Donald Trump, Bill Gates
 | UI | NiceGUI + Tailwind CSS |
 | Audio | soundfile, numpy |
 | Text Processing | regex with CJK support |
+| EPUB Parsing | ebooklib, BeautifulSoup |
 
 ### Architecture
 
@@ -183,6 +191,7 @@ readaloud/
 
 | Version | Features |
 |---------|----------|
+| **v5.1.0** | EPUB support, duration estimation, collapsible UI, per-item delete, popup upload |
 | **v5.0.0** | Unified generation interface, book/chapter support, auto-chunking |
 | **v4.0.0** | Voice cloning with preset samples and custom upload |
 | **v3.0.0** | NiceGUI migration, CJK support, extended speed control |
@@ -191,7 +200,7 @@ readaloud/
 
 ## Limitations
 
-- **Markdown/Text only** — No PDF or DOCX support yet
+- **No PDF/DOCX** — Only markdown, text, and EPUB files supported
 - **No streaming** — Full audio generates before playback
 - **WebM recording** — Chrome on macOS outputs WebM; convert to MP4 for X/Twitter with `ffmpeg -i input.webm -c:v libx264 -c:a aac output.mp4`
 
@@ -209,6 +218,9 @@ readaloud/
 - [x] Voice cloning from reference audio
 - [x] Book/chapter support with auto-chunking
 - [x] Unified generation interface
+- [x] EPUB file support
+- [x] Audio duration estimation
+- [x] Collapsible UI sections
 - [ ] Synchronized text highlighting (karaoke mode)
 - [ ] PDF support
 - [ ] Real-time streaming playback
@@ -223,8 +235,9 @@ This project was built using AI-augmented development with Claude:
 - **V3 (NiceGUI)**: +5-7 hours — modern UI, CJK support, duplicate detection
 - **V4 (Voice Cloning)**: +2 hours — clone any voice from reference audio
 - **V5 (Unified UI)**: +4 hours — book support, chapter generation, streamlined interface
+- **V5.1 (Polish)**: +2 hours — EPUB support, duration estimation, UI refinements
 
-Total development time: ~18-20 hours for a full-featured local TTS application with voice cloning.
+Total development time: ~20-22 hours for a full-featured local TTS application with voice cloning and EPUB support.
 
 **Tested on**: MacBook Pro M4 with 48GB RAM. Performance will vary on other hardware.
 
