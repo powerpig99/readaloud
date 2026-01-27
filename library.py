@@ -389,6 +389,7 @@ def create_book(
     filename: str,
     chapters: List[Dict[str, Any]],
     content_hash: Optional[str] = None,
+    source_type: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Create a book with multiple chapters.
@@ -452,6 +453,10 @@ def create_book(
             "model_size": "0.6B"
         }
     }
+
+    # Add source type if specified (e.g., 'epub')
+    if source_type:
+        metadata["source_type"] = source_type
 
     # Save full document (all chapters concatenated)
     doc_path = book_dir / "document.md"

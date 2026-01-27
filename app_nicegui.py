@@ -8,9 +8,81 @@ from nicegui import ui, app, run, context
 import asyncio
 import tempfile
 import time
+import io
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Tuple, List
 from dataclasses import dataclass, field
+import ebooklib
+from ebooklib import epub
+from bs4 import BeautifulSoup
+
+
+def estimate_audio_duration(word_count: int, words_per_minute: int = 150) -> str:
+    """Estimate audio duration based on word count. Returns formatted string like '~5 min'."""
+    if word_count <= 0:
+        return ""
+    minutes = word_count / words_per_minute
+    if minutes < 1:
+        return f"~{int(minutes * 60)}s"
+    elif minutes < 60:
+        return f"~{int(minutes)} min"
+    else:
+        hours = int(minutes // 60)
+        mins = int(minutes % 60)
+        return f"~{hours}h {mins}m"
+
+
+def parse_epub_content(epub_bytes: bytes) -> Tuple[str, str, List[dict]]:
+    """
+    Parse EPUB file and extract title, content, and chapters.
+    Returns: (title, full_markdown_content, chapters_list)
+    """
+    # Read EPUB from bytes
+    book = epub.read_epub(io.BytesIO(epub_bytes))
+
+    # Extract title
+    title = book.get_metadata('DC', 'title')
+    title = title[0][0] if title else "Untitled"
+
+    chapters = []
+    all_content = []
+
+    # Process each document item
+    for item in book.get_items():
+        if item.get_type() == ebooklib.ITEM_DOCUMENT:
+            # Parse HTML content
+            soup = BeautifulSoup(item.get_content(), 'html.parser')
+
+            # Try to find chapter title from headings
+            chapter_title = None
+            for tag in ['h1', 'h2', 'h3']:
+                heading = soup.find(tag)
+                if heading:
+                    chapter_title = heading.get_text(strip=True)
+                    break
+
+            # Extract text content
+            text = soup.get_text(separator='\n', strip=True)
+            if text.strip():
+                # Use item name as fallback title
+                if not chapter_title:
+                    chapter_title = Path(item.get_name()).stem.replace('_', ' ').replace('-', ' ').title()
+
+                # Calculate word count
+                word_count = len(text.split())
+
+                chapters.append({
+                    'title': chapter_title,
+                    'content': text,
+                    'word_count': word_count,
+                })
+                all_content.append(f"# {chapter_title}\n\n{text}")
+
+    # Combine all content as markdown
+    full_content = "\n\n---\n\n".join(all_content)
+
+    return title, full_content, chapters
+
 
 # Speed presets for extended control (native player only goes to 2x)
 SPEED_OPTIONS = {
@@ -219,39 +291,64 @@ class ReadAloudApp:
             word_count = item.get('total_words', 0)
             chapter_count = item.get('chapter_count', 0)
 
-            # Create expandable card for books
-            with ui.expansion(
-                f"{item['title']}",
-                icon="menu_book"
-            ).classes("w-full") as expansion:
-                # Summary line
-                ui.label(f"{chapter_count} chapters | {word_count:,} words").classes(
-                    "text-xs text-gray-500 mb-2"
-                )
+            # Create expandable card for books with delete button in header
+            est_duration = estimate_audio_duration(word_count)
+            with ui.row().classes("w-full items-center"):
+                with ui.expansion(
+                    f"{item['title']}",
+                    icon="menu_book"
+                ).classes("flex-1") as expansion:
+                    # Summary line with estimated duration
+                    ui.label(f"{chapter_count} chapters | {word_count:,} words | {est_duration}").classes(
+                        "text-xs text-gray-500 mb-2"
+                    )
 
-                # Chapter list
-                for idx, ch in enumerate(chapters):
-                    self._create_chapter_row(item_id, idx, ch)
+                    # Chapter list
+                    for idx, ch in enumerate(chapters):
+                        self._create_chapter_row(item_id, idx, ch)
+
+                # Delete button outside expansion
+                ui.button(
+                    icon="delete",
+                    on_click=lambda i=item_id: self._delete_single_item(i),
+                    color="red"
+                ).props("flat dense round size=sm").classes("opacity-50 hover:opacity-100")
 
             self.library_cards[item_id] = expansion
         else:
             # Standard card for documents
+            word_count = item.get('word_count', 0)
+            audio_duration = item.get('audio_duration', 0)
+
+            # Show actual duration if audio exists, otherwise estimated
+            if has_audio and audio_duration > 0:
+                duration_str = f"{audio_duration:.0f}s"
+            else:
+                duration_str = estimate_audio_duration(word_count)
+
             card = ui.card().classes(
                 "w-full cursor-pointer hover:bg-blue-50 transition-colors p-3"
             ).on('click', lambda i=item_id: self._on_card_click(i))
 
             with card:
                 with ui.row().classes("w-full items-center justify-between"):
-                    with ui.column().classes("gap-0"):
+                    with ui.column().classes("gap-0 flex-1"):
                         ui.label(item['title']).classes("font-semibold text-sm truncate max-w-xs")
-                        word_count = item.get('word_count', 0)
-                        ui.label(f"{word_count} words").classes("text-xs text-gray-500")
+                        ui.label(f"{word_count:,} words | {duration_str}").classes("text-xs text-gray-500")
 
-                    # Audio status badge
-                    if has_audio:
-                        ui.badge("Audio", color="green").props("outline")
-                    else:
-                        ui.badge("No Audio", color="grey").props("outline")
+                    with ui.row().classes("gap-2 items-center"):
+                        # Audio status badge
+                        if has_audio:
+                            ui.badge("Audio", color="green").props("outline")
+                        else:
+                            ui.badge("No Audio", color="grey").props("outline")
+
+                        # Delete button for this item
+                        ui.button(
+                            icon="delete",
+                            on_click=lambda i=item_id: self._delete_single_item(i),
+                            color="red"
+                        ).props("flat dense round size=sm").classes("opacity-50 hover:opacity-100")
 
             self.library_cards[item_id] = card
 
@@ -260,13 +357,20 @@ class ReadAloudApp:
         has_audio = chapter.get('audio_path') is not None
         chapter_title = chapter.get('title', f'Chapter {chapter_idx + 1}')
         word_count = chapter.get('word_count', 0)
+        audio_duration = chapter.get('audio_duration', 0)
+
+        # Show actual duration if audio exists, otherwise estimated
+        if has_audio and audio_duration > 0:
+            duration_str = f"{audio_duration:.0f}s"
+        else:
+            duration_str = estimate_audio_duration(word_count)
 
         with ui.row().classes(
             "w-full p-2 hover:bg-blue-50 cursor-pointer rounded items-center justify-between"
         ).on('click', lambda b=book_id, idx=chapter_idx: self.select_chapter(b, idx)):
             with ui.column().classes("gap-0 flex-1"):
                 ui.label(f"{chapter_idx + 1}. {chapter_title[:40]}").classes("text-sm")
-                ui.label(f"{word_count:,} words").classes("text-xs text-gray-400")
+                ui.label(f"{word_count:,} words | {duration_str}").classes("text-xs text-gray-400")
 
             if has_audio:
                 ui.badge("Audio", color="green").props("outline size=sm")
@@ -765,6 +869,51 @@ class ReadAloudApp:
         except Exception as e:
             ui.notify(f"Error: {str(e)}", type="negative")
 
+    async def _delete_single_item(self, item_id: str):
+        """Delete a specific library item with confirmation dialog."""
+        # Get item title for confirmation message
+        item = library.get_item(item_id)
+        title = item.get('title', 'this item') if item else 'this item'
+
+        # Show confirmation dialog
+        confirmed = [False]
+
+        with ui.dialog() as dialog, ui.card():
+            ui.label(f"Delete '{title}'?").classes("text-lg font-semibold")
+            ui.label("This action cannot be undone.").classes("text-gray-500")
+
+            with ui.row().classes("w-full justify-end gap-2 mt-4"):
+                ui.button("Cancel", on_click=dialog.close).props("flat")
+
+                def confirm_delete():
+                    confirmed[0] = True
+                    dialog.close()
+
+                ui.button("Delete", on_click=confirm_delete, color="red")
+
+        dialog.open()
+        await dialog
+
+        if not confirmed[0]:
+            return
+
+        try:
+            library.delete_item(item_id)
+            ui.notify("Item deleted", type="positive")
+
+            # Clear selection if deleted item was selected
+            if self.current_item_id == item_id:
+                self.current_item_id = None
+                self.current_chapter_idx = None
+                self.current_audio_path = None
+                self.text_preview.value = ""
+                self.update_audio_player(None)
+                self.update_generation_section(None)
+
+            self.refresh_library()
+        except Exception as e:
+            ui.notify(f"Error: {str(e)}", type="negative")
+
     async def add_and_generate(self, file_content: bytes, filename: str, title: str,
                                 voice: str, lang: str, model_size: str,
                                 voice_prompt=None):
@@ -885,6 +1034,154 @@ class ReadAloudApp:
         dialog.open()
         await dialog
         return result['choice']
+
+    async def _show_add_to_library_dialog(self):
+        """Show popup dialog for adding files to library."""
+        result = {'item': None}
+        upload_state = {'content': None, 'filename': None, 'is_epub': False, 'epub_parsed': None}
+
+        with ui.dialog() as dialog, ui.card().classes("w-96"):
+            ui.label("Add to Library").classes("text-lg font-bold")
+
+            # File upload
+            title_input = ui.input(
+                label="Title (auto-extracted)",
+                placeholder="Will be extracted from file",
+            ).classes("w-full")
+
+            async def on_upload(e):
+                file_bytes = await e.file.read()
+                upload_state['content'] = file_bytes
+                upload_state['filename'] = e.file.name
+                upload_state['is_epub'] = e.file.name.lower().endswith('.epub')
+
+                try:
+                    if upload_state['is_epub']:
+                        title, content, chapters = parse_epub_content(file_bytes)
+                        upload_state['epub_parsed'] = (title, content, chapters)
+                        title_input.value = title
+                        word_count = sum(ch.get('word_count', 0) for ch in chapters)
+                        ui.notify(f"EPUB loaded: {len(chapters)} chapters, {word_count:,} words", type="positive")
+                    else:
+                        content = file_bytes.decode('utf-8')
+                        # Extract title
+                        extracted_title = None
+                        for line in content.strip().split('\n'):
+                            if line.startswith('#'):
+                                extracted_title = line.lstrip('#').strip()
+                                break
+                        if not extracted_title:
+                            extracted_title = Path(e.file.name).stem
+                        title_input.value = extracted_title
+                        word_count = len(content.split())
+                        ui.notify(f"File loaded: {word_count:,} words", type="positive")
+                except Exception as ex:
+                    ui.notify(f"Error: {ex}", type="warning")
+                    title_input.value = Path(e.file.name).stem
+
+            ui.upload(
+                label="Upload .md, .txt, or .epub",
+                auto_upload=True,
+                max_files=1,
+                on_upload=on_upload,
+            ).classes("w-full").props('accept=".md,.txt,.epub"')
+
+            with ui.row().classes("w-full justify-end gap-2 mt-4"):
+                ui.button("Cancel", on_click=dialog.close).props("flat")
+
+                async def on_add():
+                    if upload_state['content'] is None:
+                        ui.notify("Please upload a file first", type="warning")
+                        return
+
+                    try:
+                        filename = upload_state['filename']
+                        title = title_input.value.strip() if title_input.value else None
+
+                        if upload_state['is_epub']:
+                            epub_title, content, chapters = upload_state['epub_parsed']
+                            if title is None:
+                                title = epub_title
+
+                            content_hash = library.compute_content_hash(content)
+                            existing = library.find_by_hash(content_hash)
+
+                            if existing:
+                                dialog.close()
+                                dup_result = await self.show_duplicate_dialog(existing['title'])
+                                if dup_result == 'cancel':
+                                    ui.notify("Upload cancelled", type="info")
+                                    return
+                                elif dup_result == 'override':
+                                    library.delete_item(existing['id'])
+
+                            lib_chapters = [
+                                {'title': ch['title'], 'content': ch['content'], 'word_count': ch.get('word_count', 0)}
+                                for ch in chapters if ch['content'].strip()
+                            ]
+
+                            item = library.create_book(
+                                title=title,
+                                filename=filename,
+                                chapters=lib_chapters,
+                                content_hash=content_hash,
+                                source_type='epub',
+                            )
+                            result['item'] = item
+                            ui.notify(f"Added: {title} ({item['chapter_count']} chapters)", type="positive")
+                        else:
+                            content = upload_state['content'].decode('utf-8')
+                            content_hash = library.compute_content_hash(content)
+                            existing = library.find_by_hash(content_hash)
+
+                            if existing:
+                                dialog.close()
+                                dup_result = await self.show_duplicate_dialog(existing['title'])
+                                if dup_result == 'cancel':
+                                    ui.notify("Upload cancelled", type="info")
+                                    return
+                                elif dup_result == 'override':
+                                    library.delete_item(existing['id'])
+
+                            text = extract_text_from_markdown(content)
+
+                            if should_auto_chunk(text):
+                                chapters = split_into_chapters(content)
+                                if title is None:
+                                    for line in content.strip().split('\n'):
+                                        if line.startswith('#'):
+                                            title = line.lstrip('#').strip()
+                                            break
+                                    if not title:
+                                        title = Path(filename).stem
+
+                                item = library.create_book(
+                                    title=title,
+                                    filename=filename,
+                                    chapters=chapters,
+                                    content_hash=content_hash,
+                                )
+                            else:
+                                item = library.create_item(content, filename, title)
+
+                            result['item'] = item
+                            stats = get_text_stats(text)
+                            ui.notify(f"Added: {item['title']} ({stats['words']} words)", type="positive")
+
+                        dialog.close()
+                    except Exception as e:
+                        import traceback
+                        traceback.print_exc()
+                        ui.notify(f"Error: {str(e)}", type="negative")
+
+                ui.button("Add", on_click=on_add, color="primary")
+
+        dialog.open()
+        await dialog
+
+        if result['item']:
+            self.refresh_library()
+            self._on_card_click(result['item']['id'])
 
     def show_progress(self, total_chunks: int):
         """Show the progress card and start tracking."""
@@ -1223,20 +1520,15 @@ class ReadAloudApp:
 
             ui.separator().classes("my-4")
 
-            # Library section
-            with ui.row().classes("w-full items-center justify-between"):
-                ui.markdown("### Library").classes("text-xl font-semibold")
-                with ui.row().classes("gap-2"):
-                    ui.button("Refresh", on_click=self.refresh_library, icon="refresh").props("flat dense")
-                    ui.button("Delete", on_click=self.delete_item, icon="delete", color="red").props("flat dense")
+            # Library section (collapsible)
+            with ui.expansion("Library", icon="folder", value=True).classes("w-full"):
+                # Scrollable library card container (resizable, no max height)
+                self.library_scroll = ui.scroll_area().classes("w-full border rounded").style("height: 600px; resize: vertical; overflow: auto")
+                with self.library_scroll:
+                    self.library_container = ui.column().classes("w-full gap-1 p-1")
 
-            # Scrollable library card container (resizable, no max height)
-            self.library_scroll = ui.scroll_area().classes("w-full border rounded").style("height: 600px; resize: vertical; overflow: auto")
-            with self.library_scroll:
-                self.library_container = ui.column().classes("w-full gap-1 p-1")
-
-            # Initial load of library cards
-            self.refresh_library()
+                # Initial load of library cards
+                self.refresh_library()
 
             ui.separator().classes("my-4")
 
@@ -1286,181 +1578,68 @@ class ReadAloudApp:
 
             ui.separator().classes("my-4")
 
-            # Generate Audio section (fixed at bottom)
-            ui.markdown("### Generate Audio").classes("text-xl font-semibold")
+            # Generate Audio section (collapsible)
+            with ui.expansion("Generate Audio", icon="audiotrack", value=True).classes("w-full") as self.gen_expansion:
+                self.generation_container = ui.column().classes("w-full gap-4 p-4")
+                with self.generation_container:
+                    # Selected item label (shown when no item selected)
+                    self.gen_selected_label = ui.label(
+                        "Select an item from the library"
+                    ).classes("text-gray-500 italic")
 
-            self.generation_container = ui.column().classes("w-full gap-4 p-4 border rounded")
-            with self.generation_container:
-                # Selected item label (shown when no item selected)
-                self.gen_selected_label = ui.label(
-                    "Select an item from the library"
-                ).classes("text-gray-500 italic")
+                    # Voice selection row (hidden until item selected)
+                    self.voice_row = ui.row().classes("w-full gap-4 hidden")
+                    with self.voice_row:
+                        # Stock voice dropdown with "None" as first option
+                        stock_options = ["None"] + list(VOICES.keys())
+                        self.stock_voice_select = ui.select(
+                            label="Stock Voice",
+                            options=stock_options,
+                            value="Ryan (English Male)",
+                            on_change=self.on_stock_voice_change,
+                        ).classes("flex-1")
 
-                # Voice selection row (hidden until item selected)
-                self.voice_row = ui.row().classes("w-full gap-4 hidden")
-                with self.voice_row:
-                    # Stock voice dropdown with "None" as first option
-                    stock_options = ["None"] + list(VOICES.keys())
-                    self.stock_voice_select = ui.select(
-                        label="Stock Voice",
-                        options=stock_options,
-                        value="Ryan (English Male)",
-                        on_change=self.on_stock_voice_change,
-                    ).classes("flex-1")
+                        # Clone voice dropdown with transcript previews
+                        self.clone_voice_select = ui.select(
+                            label="Clone Voice",
+                            options=self._build_clone_options(),
+                            value="None",
+                            on_change=self.on_clone_voice_change,
+                        ).classes("flex-1")
 
-                    # Clone voice dropdown with transcript previews
-                    self.clone_voice_select = ui.select(
-                        label="Clone Voice",
-                        options=self._build_clone_options(),
-                        value="None",
-                        on_change=self.on_clone_voice_change,
-                    ).classes("flex-1")
+                    # Settings row (hidden until item selected)
+                    self.settings_row = ui.row().classes("w-full gap-4 hidden")
+                    with self.settings_row:
+                        self.gen_language = ui.select(
+                            label="Language",
+                            options=LANGUAGES,
+                            value="English",
+                        ).classes("flex-1")
 
-                # Settings row (hidden until item selected)
-                self.settings_row = ui.row().classes("w-full gap-4 hidden")
-                with self.settings_row:
-                    self.gen_language = ui.select(
-                        label="Language",
-                        options=LANGUAGES,
-                        value="English",
-                    ).classes("flex-1")
+                        self.gen_model = ui.select(
+                            label="Model",
+                            options=["0.6B (faster)", "1.7B (better)"],
+                            value="1.7B (better)",
+                        ).classes("flex-1")
 
-                    self.gen_model = ui.select(
-                        label="Model",
-                        options=["0.6B (faster)", "1.7B (better)"],
-                        value="1.7B (better)",
-                    ).classes("flex-1")
-
-                # Generate button (hidden until item selected)
-                # Note: Pass async function directly to on_click - NiceGUI handles it properly
-                self.gen_button = ui.button(
-                    "Generate Audio",
-                    on_click=self.on_generate_from_section,
-                    color="primary",
-                    icon="audiotrack",
-                ).classes("w-full hidden")
+                    # Generate button (hidden until item selected)
+                    # Note: Pass async function directly to on_click - NiceGUI handles it properly
+                    self.gen_button = ui.button(
+                        "Generate Audio",
+                        on_click=self.on_generate_from_section,
+                        color="primary",
+                        icon="audiotrack",
+                    ).classes("w-full hidden")
 
             ui.separator().classes("my-4")
 
-            # Add new document section (simplified - just adds to library, no audio generation)
-            with ui.expansion("Add to Library", icon="add").classes("w-full"):
-                with ui.column().classes("w-full gap-4 p-4"):
-                    # File upload handler - store content and filename for later use
-                    async def handle_upload(e):
-                        # NiceGUI 3.0+: e.file.name and e.file.read() (async)
-                        self._uploaded_content = await e.file.read()
-                        self._uploaded_filename = e.file.name
-
-                        # Extract and prefill title from content
-                        try:
-                            content = self._uploaded_content.decode('utf-8')
-                            extracted_title = None
-                            lines = content.strip().split('\n')
-                            for line in lines:
-                                if line.startswith('#'):
-                                    extracted_title = line.lstrip('#').strip()
-                                    break
-                            if extracted_title is None:
-                                # Use filename stem as fallback
-                                extracted_title = Path(e.file.name).stem
-                            title_input.value = extracted_title
-                        except Exception:
-                            pass  # Keep title empty on decode errors
-
-                        ui.notify(f"File ready: {e.file.name}", type="positive")
-
-                    upload = ui.upload(
-                        label="Upload .md or .txt (one file only)",
-                        auto_upload=True,
-                        max_files=1,
-                        on_upload=handle_upload,
-                    ).classes("w-full").props('accept=".md,.txt"')
-
-                    title_input = ui.input(
-                        label="Title (optional)",
-                        placeholder="Auto-extracted if empty",
-                    ).classes("w-full")
-
-                    async def add_to_library_only():
-                        """Add file to library without generating audio."""
-                        if not hasattr(self, '_uploaded_content') or self._uploaded_content is None:
-                            ui.notify("Please upload a file first", type="warning")
-                            return
-
-                        try:
-                            content = self._uploaded_content.decode('utf-8')
-                            filename = self._uploaded_filename
-                            title = title_input.value.strip() if title_input.value else None
-
-                            # Check for duplicate content
-                            content_hash = library.compute_content_hash(content)
-                            existing = library.find_by_hash(content_hash)
-
-                            if existing:
-                                # Show duplicate dialog
-                                result = await self.show_duplicate_dialog(existing['title'])
-                                if result == 'cancel':
-                                    ui.notify("Upload cancelled", type="info")
-                                    return
-                                elif result == 'override':
-                                    # Delete existing item first
-                                    library.delete_item(existing['id'])
-                                    ui.notify(f"Replaced: {existing['title']}", type="info")
-
-                            # Extract plain text for analysis
-                            text = extract_text_from_markdown(content)
-
-                            # Check if this should be a book (long doc with chapters)
-                            if should_auto_chunk(text):
-                                # Split into chapters and create book
-                                chapters = split_into_chapters(content)
-
-                                # Extract title from first heading if not provided
-                                if title is None:
-                                    lines = content.strip().split('\n')
-                                    for line in lines:
-                                        if line.startswith('#'):
-                                            title = line.lstrip('#').strip()
-                                            break
-                                    if title is None:
-                                        title = Path(filename).stem
-
-                                item = library.create_book(
-                                    title=title,
-                                    filename=filename,
-                                    chapters=chapters,
-                                    content_hash=content_hash,
-                                )
-                                ui.notify(
-                                    f"Added book: {title} ({item['chapter_count']} chapters, {item['total_words']} words)",
-                                    type="positive"
-                                )
-                            else:
-                                # Create single document
-                                item = library.create_item(content, filename, title)
-                                stats = get_text_stats(text)
-                                ui.notify(f"Added: {item['title']} ({stats['words']} words)", type="positive")
-
-                            # Refresh library and select new item
-                            self.refresh_library()
-                            self._on_card_click(item['id'])
-
-                            # Clear upload state
-                            self._uploaded_content = None
-                            self._uploaded_filename = None
-                            upload.reset()
-                            title_input.value = ""
-
-                        except Exception as e:
-                            import traceback
-                            traceback.print_exc()
-                            ui.notify(f"Error: {str(e)}", type="negative")
-
-                    ui.button(
-                        "Add to Library",
-                        on_click=add_to_library_only,
-                        color="primary",
-                    ).classes("w-full mt-2")
+            # Add to Library button (opens popup dialog)
+            ui.button(
+                "Add to Library",
+                on_click=self._show_add_to_library_dialog,
+                color="primary",
+                icon="add",
+            ).classes("w-full")
 
 
 # Serve audio files from the library directory
