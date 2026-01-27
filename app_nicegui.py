@@ -1535,7 +1535,7 @@ class ReadAloudApp:
                         ).props("flat dense").classes("ml-2").on('click.stop', lambda: None)
 
                 # Scrollable library card container (resizable, no max height)
-                self.library_scroll = ui.scroll_area().classes("w-full border rounded").style("height: 600px; resize: vertical; overflow: auto")
+                self.library_scroll = ui.scroll_area().classes("w-full border rounded").style("min-height: 200px; height: 600px; resize: vertical; overflow: auto; flex-shrink: 0")
                 with self.library_scroll:
                     self.library_container = ui.column().classes("w-full gap-1 p-1")
 
