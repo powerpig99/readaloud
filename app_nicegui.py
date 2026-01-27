@@ -398,6 +398,13 @@ class ReadAloudApp:
             book_meta = library.get_item(book_id)
             if book_meta:
                 chapters = book_meta.get('chapters', [])
+                book_title = book_meta.get('title', 'Book')
+                chapter_title = chapters[chapter_idx].get('title', f'Chapter {chapter_idx + 1}') if chapter_idx < len(chapters) else f'Chapter {chapter_idx + 1}'
+
+                # Update preview title and collapse library
+                self.preview_title.set_content(f"### {book_title} - {chapter_title}")
+                self.lib_expansion.value = False
+
                 if chapter_idx < len(chapters):
                     audio_path = chapters[chapter_idx].get('audio_path')
                     if audio_path and Path(audio_path).exists():
@@ -412,10 +419,6 @@ class ReadAloudApp:
 
             # Update generation section for this chapter
             self.update_generation_section(book_id, chapter_idx)
-
-            # Show chapter info in status
-            chapter_title = book_meta['chapters'][chapter_idx].get('title', f'Chapter {chapter_idx + 1}') if book_meta else f'Chapter {chapter_idx + 1}'
-            ui.notify(f"Selected: {chapter_title}", type="info")
 
         except Exception as e:
             ui.notify(f"Error loading chapter: {str(e)}", type="negative")
@@ -451,6 +454,10 @@ class ReadAloudApp:
 
             self.current_item_id = item_id
             self.current_chapter_idx = None  # Reset chapter selection (this is a document, not a book chapter)
+
+            # Update preview title and collapse library
+            self.preview_title.set_content(f"### {item['title']}")
+            self.lib_expansion.value = False
 
             if library.has_audio(item_id):
                 audio_path = str(library.get_audio_path(item_id))
@@ -1520,10 +1527,10 @@ class ReadAloudApp:
 
             ui.separator().classes("my-4")
 
-            # Library section (collapsible)
-            with ui.expansion("Library", icon="folder", value=True).classes("w-full") as lib_expansion:
+            # Library section (collapsible, collapses on item selection)
+            with ui.expansion("Library", icon="folder", value=True).classes("w-full") as self.lib_expansion:
                 # Add button in header
-                with lib_expansion.add_slot('header'):
+                with self.lib_expansion.add_slot('header'):
                     with ui.row().classes("w-full items-center"):
                         ui.icon("folder").classes("text-xl mr-2")
                         ui.label("Library").classes("text-lg font-medium flex-grow")
@@ -1534,8 +1541,8 @@ class ReadAloudApp:
                             icon="add",
                         ).props("flat dense").classes("ml-2").on('click.stop', lambda: None)
 
-                # Scrollable library card container (resizable, no max height)
-                self.library_scroll = ui.scroll_area().classes("w-full border rounded").style("min-height: 200px; height: 600px; resize: vertical; overflow: auto; flex-shrink: 0")
+                # Scrollable library card container
+                self.library_scroll = ui.scroll_area().classes("w-full border rounded").style("height: 400px; overflow: auto")
                 with self.library_scroll:
                     self.library_container = ui.column().classes("w-full gap-1 p-1")
 
@@ -1544,8 +1551,8 @@ class ReadAloudApp:
 
             ui.separator().classes("my-4")
 
-            # Text preview
-            ui.markdown("### Document Preview").classes("text-xl font-semibold")
+            # Text preview with dynamic title
+            self.preview_title = ui.markdown("### Document Preview").classes("text-xl font-semibold")
 
             self.text_preview = ui.textarea(
                 label="Text",
