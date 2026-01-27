@@ -1521,7 +1521,19 @@ class ReadAloudApp:
             ui.separator().classes("my-4")
 
             # Library section (collapsible)
-            with ui.expansion("Library", icon="folder", value=True).classes("w-full"):
+            with ui.expansion("Library", icon="folder", value=True).classes("w-full") as lib_expansion:
+                # Add button in header
+                with lib_expansion.add_slot('header'):
+                    with ui.row().classes("w-full items-center"):
+                        ui.icon("folder").classes("text-xl mr-2")
+                        ui.label("Library").classes("text-lg font-medium flex-grow")
+                        ui.button(
+                            "Add",
+                            on_click=self._show_add_to_library_dialog,
+                            color="primary",
+                            icon="add",
+                        ).props("flat dense").classes("ml-2").on('click.stop', lambda: None)
+
                 # Scrollable library card container (resizable, no max height)
                 self.library_scroll = ui.scroll_area().classes("w-full border rounded").style("height: 600px; resize: vertical; overflow: auto")
                 with self.library_scroll:
@@ -1631,15 +1643,6 @@ class ReadAloudApp:
                         icon="audiotrack",
                     ).classes("w-full hidden")
 
-            ui.separator().classes("my-4")
-
-            # Add to Library button (opens popup dialog)
-            ui.button(
-                "Add to Library",
-                on_click=self._show_add_to_library_dialog,
-                color="primary",
-                icon="add",
-            ).classes("w-full")
 
 
 # Serve audio files from the library directory
