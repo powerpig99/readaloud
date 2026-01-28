@@ -4,7 +4,7 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![NiceGUI](https://img.shields.io/badge/UI-NiceGUI-green.svg)](https://nicegui.io/)
 [![Local First](https://img.shields.io/badge/Local-First-purple.svg)](#)
-[![Version](https://img.shields.io/badge/version-5.1.0-brightgreen.svg)](https://github.com/powerpig99/readaloud/releases)
+[![Version](https://img.shields.io/badge/version-5.2.0-brightgreen.svg)](https://github.com/powerpig99/readaloud/releases)
 
 **Local-first text-to-speech reader powered by Qwen3-TTS.**
 
@@ -44,10 +44,15 @@ This project is what happens when personal resonance meets technical timing.
 - **Voice Cloning** — Clone any voice from 3-30 second reference audio (V4)
 - **10 Languages** — English, Chinese, Japanese, Korean, French, German, Spanish, Portuguese, Russian, Italian
 - **Speed Control** — 0.5x to 3x playback speed
-- **Model Choice** — 0.6B (fast) or 1.7B (higher quality)
+- **Model Choice** — 0.6B (fast) or 1.7B (higher quality), with bf16 or 4-bit quantization
 - **Fully Local** — No cloud, no accounts, your data stays on your machine
 
-### V5.1: Streamlined Interface (Latest)
+### V5.2: Apple Silicon Optimization (Latest)
+- **mlx-audio Backend** — Native Metal acceleration for Apple Silicon Macs, replacing PyTorch
+- **Quality Options** — Choose between Best (bf16) or Fast (4-bit) quantization
+- **Faster Inference** — Optimized for M-series chips with significantly reduced memory usage
+
+### V5.1: Streamlined Interface
 - **EPUB Support** — Import EPUB books with automatic chapter extraction
 - **Duration Estimation** — Shows estimated audio length before generation, actual duration after
 - **Collapsible Sections** — Library and Generate Audio sections collapse for cleaner interface
@@ -76,7 +81,8 @@ This project is what happens when personal resonance meets technical timing.
 
 - Python 3.10+
 - ~8GB RAM (for 0.6B model) or ~16GB (for 1.7B model)
-- macOS, Linux, or Windows
+- **Apple Silicon Mac recommended** (M1/M2/M3/M4) — uses mlx-audio with Metal acceleration
+- Also works on Intel Macs and Linux (with slower inference)
 
 ### Installation
 
@@ -99,7 +105,7 @@ python app_nicegui.py
 ```
 Open http://127.0.0.1:8080 in your browser.
 
-**First run:** The TTS model (~1.5GB) downloads automatically from HuggingFace.
+**First run:** The TTS model downloads automatically from HuggingFace (~300MB for 0.6B-4bit, ~1.5GB for 1.7B-bf16).
 
 ---
 
@@ -119,7 +125,7 @@ Long documents with chapter headings and EPUB files are automatically split into
 2. In the **Generate Audio** section at the bottom:
    - Choose a **Stock Voice** (preset) OR
    - Choose a **Clone Voice** (preset samples or upload your own)
-3. Select language and model size
+3. Select language, model size, and quality (bf16 for best quality, 4-bit for faster generation)
 4. Click **Generate Audio**
 
 ### Voice Cloning
@@ -144,7 +150,8 @@ Preset clone samples included: Elon Musk, Jensen Huang, Donald Trump, Bill Gates
 
 | Component | Technology |
 |-----------|------------|
-| TTS Model | Qwen3-TTS (0.6B or 1.7B) |
+| TTS Model | Qwen3-TTS (0.6B or 1.7B) via mlx-audio |
+| Backend | mlx-audio with Metal acceleration (Apple Silicon) |
 | UI | NiceGUI + Tailwind CSS |
 | Audio | soundfile, numpy |
 | Text Processing | regex with CJK support |
@@ -155,7 +162,7 @@ Preset clone samples included: Elon Musk, Jensen Huang, Donald Trump, Bill Gates
 ```
 readaloud/
 ├── app_nicegui.py      # NiceGUI UI - port 8080
-├── tts_engine.py       # Qwen3-TTS model wrapper + voice cloning
+├── tts_engine.py       # Qwen3-TTS via mlx-audio, voice cloning, 4-bit quantization
 ├── library.py          # Document/book/audio persistence
 ├── text_processor.py   # Markdown parsing, auto-chunking, CJK support
 ├── audio_processor.py  # Audio duration utilities
@@ -191,6 +198,7 @@ readaloud/
 
 | Version | Features |
 |---------|----------|
+| **v5.2.0** | mlx-audio backend for Apple Silicon, 4-bit quantization option |
 | **v5.1.0** | EPUB support, duration estimation, collapsible UI, per-item delete, popup upload |
 | **v5.0.0** | Unified generation interface, book/chapter support, auto-chunking |
 | **v4.0.0** | Voice cloning with preset samples and custom upload |
@@ -221,6 +229,8 @@ readaloud/
 - [x] EPUB file support
 - [x] Audio duration estimation
 - [x] Collapsible UI sections
+- [x] Apple Silicon optimization (mlx-audio)
+- [x] 4-bit quantization for faster inference
 - [ ] Synchronized text highlighting (karaoke mode)
 - [ ] PDF support
 - [ ] Real-time streaming playback
@@ -236,6 +246,7 @@ This project was built using AI-augmented development with Claude:
 - **V4 (Voice Cloning)**: +2 hours — clone any voice from reference audio
 - **V5 (Unified UI)**: +4 hours — book support, chapter generation, streamlined interface
 - **V5.1 (Polish)**: +2 hours — EPUB support, duration estimation, UI refinements
+- **V5.2 (mlx-audio)**: migrated from PyTorch to mlx-audio for Apple Silicon optimization
 
 Total development time: ~20-22 hours for a full-featured local TTS application with voice cloning and EPUB support. *(No further time tracking—the point is made.)*
 
