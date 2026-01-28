@@ -12,6 +12,7 @@ ReadAloud v5.1 is a local-first text-to-speech web application with library mana
 - V4 (Voice cloning): +2 hours
 - V5 (Unified UI): +4 hours
 - V5.1 (Polish): +2 hours — EPUB support, duration estimation, UI refinements
+- V5.2 (mlx-audio): Migrated from PyTorch to mlx-audio for native Apple Silicon optimization
 - Total: ~20-22 hours using AI-augmented development
 
 **Note:** No need to continue tracking development time. The initial estimates were sufficient to demonstrate the speed of AI-augmented development.
@@ -52,7 +53,8 @@ ReadAloud v5.1 is a local-first text-to-speech web application with library mana
 | **Voice cloning** | ❌ | ✅ | Clone any voice from 3-30s reference audio (V4) |
 | 10 languages | ✅ | ✅ | English, Chinese, Japanese, Korean, French, German, Spanish, Portuguese, Russian, Italian |
 | CJK chunking | ❌ | ✅ | Properly splits on `。！？，；：` for Chinese/Japanese/Korean |
-| Audio generation | ✅ | ✅ | Qwen3-TTS 0.6B or 1.7B models |
+| Audio generation | ✅ | ✅ | Qwen3-TTS via mlx-audio, 0.6B or 1.7B models |
+| **Quality options** | ❌ | ✅ | Best (bf16) or Fast (4-bit) quantization (V5.2) |
 | Speed control | 0.5x-2x | **0.5x-3x** | NiceGUI uses custom HTML5 audio player |
 | Progress indicator | ❌ | ✅ | NiceGUI shows "Generating chunk X/Y..." |
 | Screen recording | ❌ | ✅ | Press 'D' key, records current tab (debug feature) |
@@ -75,7 +77,7 @@ ReadAloud v5.1 is a local-first text-to-speech web application with library mana
 readaloud/
 ├── app.py              # Gradio UI (legacy) - port 7860
 ├── app_nicegui.py      # NiceGUI UI (recommended) - port 8080
-├── tts_engine.py       # Qwen3-TTS wrapper, voice cloning
+├── tts_engine.py       # Qwen3-TTS wrapper via mlx-audio, voice cloning, 4-bit quantization
 ├── library.py          # Document/book/audio CRUD operations
 ├── text_processor.py   # Markdown parsing, text chunking, auto-chunking
 ├── audio_processor.py  # Audio duration utilities
@@ -234,6 +236,7 @@ When resuming work:
 10. Test: Generate audio with Stock Voice → verify progress indicator shows chunk count
 11. Test: Generate audio with Clone Voice → verify no slot stack error
 12. Test: Speed control buttons (should support 0.5x-3x)
+13. Test: Quality selector (Best bf16 vs Fast 4-bit) - both should generate audio
 13. Test: Delete button on item → confirmation dialog → deletes item
 14. Test: Collapse/expand Library and Generate Audio sections
 15. Test: Press 'D' key (not in input field) → select current tab → recording indicator → press 'D' again or click "Stop sharing" → file downloads
@@ -322,11 +325,17 @@ Without `selfBrowserSurface: 'include'`, Chrome hides the current tab from the p
    - Topics/tags in About section
    - Release with version tag
 
-### Model Loading
+### Model Loading (V5.2 - mlx-audio)
 
-1. **1.7B model** takes significantly longer to load than 0.6B (~2-3 minutes for first chunk on M4)
-2. **MPS (Apple Silicon)** works but `flash-attn` not available - uses slower PyTorch fallback
+1. **Native Apple Silicon** - Uses mlx-audio for optimized Metal acceleration, no PyTorch dependency
+2. **1.7B model** takes significantly longer to load than 0.6B (~2-3 minutes for first chunk on M4)
 3. **Model is cached** after first load - subsequent generations are faster
+4. **Quantization options**:
+   - **bf16** (Best quality) - Full precision, recommended for best audio quality
+   - **4-bit** (Fast) - Quantized model, faster inference but lower quality
+5. **Model IDs** (from mlx-community on Hugging Face):
+   - CustomVoice (stock voices): `mlx-community/Qwen3-TTS-12Hz-{0.6B,1.7B}-CustomVoice-{bf16,4bit}`
+   - Base (voice cloning): `mlx-community/Qwen3-TTS-12Hz-{0.6B,1.7B}-Base-{bf16,4bit}`
 
 ### Voice Cloning (V4)
 

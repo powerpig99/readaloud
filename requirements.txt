@@ -1,8 +1,6 @@
 gradio>=4.0
 nicegui>=2.0
-qwen-tts
-torch
-torchaudio
+mlx-audio
 librosa
 soundfile
 pydub
@@ -10,3 +8,5 @@ numpy
 markdown
 whisperx
 faster-whisper
+ebooklib
+beautifulsoup4

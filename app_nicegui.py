@@ -239,6 +239,7 @@ class ReadAloudApp:
         self.settings_row = None
         self.gen_language = None
         self.gen_model = None
+        self.gen_quality = None
         self.gen_button = None
 
         # Voice cloning state
@@ -516,8 +517,9 @@ class ReadAloudApp:
         voice_prompt = None
         speaker = None
 
-        # Get model size
+        # Get model size and quality (quantization)
         model_size = "0.6B" if "0.6B" in self.gen_model.value else "1.7B"
+        quantization = "4bit" if self.gen_quality.value == "Fast (4-bit)" else "bf16"
 
         # Check if using clone voice
         if self.clone_voice_select.value != "None":
@@ -552,6 +554,7 @@ class ReadAloudApp:
                     self.clone_audio_path,
                     self.clone_transcript,
                     model_size,
+                    quantization,
                 )
             except Exception as e:
                 with client:
@@ -584,6 +587,7 @@ class ReadAloudApp:
                 model_size,
                 voice_prompt,
                 speaker,
+                quantization,
             )
         else:
             # Document generation
@@ -599,6 +603,7 @@ class ReadAloudApp:
                 model_size,
                 voice_prompt,
                 speaker,
+                quantization,
             )
 
     async def _generate_document_audio(
@@ -609,6 +614,7 @@ class ReadAloudApp:
         model_size: str,
         voice_prompt,
         speaker: str,
+        quantization: str = "bf16",
     ):
         """Generate audio for a document."""
         # Capture client context before background task (needed for UI ops after)
@@ -636,6 +642,7 @@ class ReadAloudApp:
                 voice_prompt,
                 speaker,
                 progress_callback,
+                quantization,
             )
 
             # Save audio
@@ -649,6 +656,7 @@ class ReadAloudApp:
             voice_settings = {
                 "voice": speaker if speaker else "clone",
                 "model_size": model_size,
+                "quantization": quantization,
                 "mode": "clone" if voice_prompt is not None else "preset",
             }
             library.update_item(item_id, {
@@ -693,6 +701,7 @@ class ReadAloudApp:
         model_size: str,
         voice_prompt,
         speaker: str,
+        quantization: str = "bf16",
     ):
         """Generate audio for a book chapter."""
         # Capture client context before background task (needed for UI ops after)
@@ -728,6 +737,7 @@ class ReadAloudApp:
                 voice_prompt,
                 speaker,
                 progress_callback,
+                quantization,
             )
 
             # Save audio
@@ -741,6 +751,7 @@ class ReadAloudApp:
             voice_settings = {
                 "voice": speaker if speaker else "clone",
                 "model_size": model_size,
+                "quantization": quantization,
                 "mode": "clone" if voice_prompt is not None else "preset",
             }
             library.update_item(book_id, {
@@ -1640,6 +1651,12 @@ class ReadAloudApp:
                             options=["0.6B (faster)", "1.7B (better)"],
                             value="1.7B (better)",
                         ).classes("flex-1")
+
+                        self.gen_quality = ui.select(
+                            label="Quality",
+                            options=["Best (bf16)", "Fast (4-bit)"],
+                            value="Best (bf16)",
+                        ).classes("flex-1").props('hint="4-bit is faster but lower quality"')
 
                     # Generate button (hidden until item selected)
                     # Note: Pass async function directly to on_click - NiceGUI handles it properly
